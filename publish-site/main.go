@@ -8,6 +8,7 @@ import (
 	"net/http/cgi"
 	"os"
 	"os/exec"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -32,14 +33,14 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	hashed := sha256.Sum256([]byte(password))
 	encoded := make([]byte, base64.StdEncoding.EncodedLen(len(hashed)))
 	base64.StdEncoding.Encode(encoded, hashed[:])
-	found := false
-	for _, p := range passwords {
+	var user string
+	for u, p := range passwords {
 		if bcrypt.CompareHashAndPassword(p, encoded) == nil {
-			found = true
+			user = u
 			break
 		}
 	}
-	if !found {
+	if user == "" {
 		w.WriteHeader(http.StatusUnauthorized)
 		return
 	}
@@ -64,5 +65,15 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
+
+	// Step 4: Log the publication.
+	cmd = exec.Command("git", "rev-parse", "HEAD")
+	frameworkHash, _ := cmd.Output()
+	os.Chdir("content")
+	cmd = exec.Command("git", "rev-parse", "HEAD")
+	contentHash, _ := cmd.Output()
+	log, _ := os.OpenFile("/home/scholacantorum/publish-log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	fmt.Fprintf(log, "%s %s %s %s\n", time.Now().Format(time.RFC3339), user, string(frameworkHash), string(contentHash))
+
 	w.WriteHeader(http.StatusOK)
 }
