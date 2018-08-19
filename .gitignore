@@ -1,3 +1,5 @@
 mail-signup/mail-signup
+publish-site/publish-site
+publish-site/passwords.go
 to-stripe/to-stripe
 to-stripe/stripe-keys.go
