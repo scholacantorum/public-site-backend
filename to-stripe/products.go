@@ -6,7 +6,6 @@ import (
 
 var products = map[string]productinfo{
 	"subscription.2018-19": subscription{"2018-19", 7200},
-	"donation":             donation{},
 	"ticket.2018-11-03": ticket{`"For the Love of Bach"`, "", "November 3", 2800,
 		"November 3, 2018 at 7:30pm, at First Congregational Church of Palo Alto"},
 	"ticket.2018-11-04": ticket{`"For the Love of Bach"`, "", "November 4", 2800,
@@ -15,20 +14,6 @@ var products = map[string]productinfo{
 		"March 16, 2019 at 7:30pm, at First Congregational Church of Palo Alto"},
 	"ticket.2019-03-17": ticket{"Carmina Burana", "", "March 17", 2800,
 		"March 17, 2019 at 3:00pm, at Los Altos United Methodist Church"},
-}
-
-type donation struct{}
-
-func (d donation) amount(qty int) int64       { return 100 * int64(qty) }
-func (d donation) description(qty int) string { return "Donation" }
-func (d donation) typename() string           { return "Donation" }
-func (d donation) thankyou(qty int) string {
-	return fmt.Sprintf("Thank you for your generous donation of $%d.", qty)
-}
-func (d donation) message() string {
-	return `
-<p>Your donation is tax-deductible. Schola Cantorum’s tax ID number is 94-2597822.
-A confirmation letter will be mailed to the billing address you provided.</p>`
 }
 
 type subscription struct {
@@ -46,8 +31,6 @@ func (s subscription) description(qty int) string {
 	}
 	return fmt.Sprintf("%s Season Subscriptions (%d at $%d each)", s.season, qty, s.price/100)
 }
-
-func (s subscription) typename() string { return "Order" }
 
 func (s subscription) thankyou(qty int) string {
 	if qty == 1 {
@@ -97,8 +80,6 @@ func (t ticket) description(qty int) (desc string) {
 	}
 	return desc
 }
-
-func (t ticket) typename() string { return "Order" }
 
 func (t ticket) thankyou(qty int) (ty string) {
 	ty = "Thank you for your purchase of "
