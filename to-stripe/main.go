@@ -382,7 +382,11 @@ func sendEmail() {
 	if order.itempi != nil {
 		typename = "Order"
 		thankyou = order.itempi.thankyou(order.Quantity)
-		thankyou = fmt.Sprintf("%s, and for your generous donation of $%d.", thankyou[:len(thankyou)-1], order.Donation)
+		if order.Donation != 0 {
+			thankyou = fmt.Sprintf("%s, and for your generous donation of $%d.", thankyou[:len(thankyou)-1], order.Donation)
+		} else {
+			thankyou += "."
+		}
 	} else {
 		typename = "Donation"
 		thankyou = fmt.Sprintf("Thank you for your generous donation of $%d.", order.Donation)
