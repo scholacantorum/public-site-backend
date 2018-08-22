@@ -8,13 +8,26 @@ var products = map[string]productinfo{
 	"subscription-2018-19": subscription{"2018-19", 7200},
 	"ticket-2018-11-03": ticket{`"For the Love of Bach"`, "", "November 3", 2800,
 		"November 3, 2018 at 7:30pm, at First Congregational Church of Palo Alto"},
+	"ticket-2018-11-03_SCHOLA1819": subscriberDiscount{600},
 	"ticket-2018-11-04": ticket{`"For the Love of Bach"`, "", "November 4", 2800,
 		"November 4, 2018 at 3:00pm, at Los Altos United Methodist Church"},
+	"ticket-2018-11-04_SCHOLA1819": subscriberDiscount{600},
 	"ticket-2019-03-16": ticket{"Carmina Burana", "", "March 16", 2800,
 		"March 16, 2019 at 7:30pm, at First Congregational Church of Palo Alto"},
+	"ticket-2019-03-16_SCHOLA1819": subscriberDiscount{600},
 	"ticket-2019-03-17": ticket{"Carmina Burana", "", "March 17", 2800,
 		"March 17, 2019 at 3:00pm, at Los Altos United Methodist Church"},
+	"ticket-2019-03-17_SCHOLA1819": subscriberDiscount{600},
 }
+
+type subscriberDiscount struct {
+	price int64
+}
+
+func (s subscriberDiscount) amount(qty int) int64       { return -s.price * int64(qty) }
+func (s subscriberDiscount) description(qty int) string { return "Subscriber Discount" }
+func (s subscriberDiscount) thankyou(qty int) string    { return "" }
+func (s subscriberDiscount) message() string            { return "" }
 
 type subscription struct {
 	season string
