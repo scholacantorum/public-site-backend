@@ -52,7 +52,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	// Determine parameters for mode.
 	switch cwd, _ := os.Getwd(); cwd {
-	case "/home/scholacantorum/scholacantorum.org/backend":
+	case "/home/scholacantorum/scholacantorum.org/backend", "/home/scholacantorum/scholacantorum.org/public/backend":
 		webhookSecret = private.StripeLiveOrderUpdatedWebhookSecret
 		sheet = private.OrderSheetLive
 		stripe.Key = private.StripeLiveSecretKey

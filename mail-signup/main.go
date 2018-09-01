@@ -31,7 +31,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	// Step 0.  Determine live mode vs. test mode.
 	switch cwd, _ := os.Getwd(); cwd {
-	case "/home/scholacantorum/scholacantorum.org/backend":
+	case "/home/scholacantorum/scholacantorum.org/backend", "/home/scholacantorum/scholacantorum.org/public/backend":
 		toaddr = "info@scholacantorum.org"
 		toaddrs = []string{"info@scholacantorum.org", "admin@scholacantorum.org"}
 	case "/home/scholacantorum/new.scholacantorum.org/backend":

@@ -103,7 +103,7 @@ func checkRequestMethod(w http.ResponseWriter, r *http.Request) bool {
 
 func getMode(w http.ResponseWriter) bool {
 	switch cwd, _ := os.Getwd(); cwd {
-	case "/home/scholacantorum/scholacantorum.org/backend":
+	case "/home/scholacantorum/scholacantorum.org/backend", "/home/scholacantorum/scholacantorum.org/public/backend":
 		stripe.Key = private.StripeLiveSecretKey
 		orderNumberFile = "/home/scholacantorum/order-number"
 		orderLogFile = "/home/scholacantorum/order-log"
