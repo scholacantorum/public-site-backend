@@ -1,5 +1,6 @@
 mail-signup/mail-signup
+order-updated/order-updated
+private
 publish-site/publish-site
-publish-site/passwords.go
+sku-updated/sku-updated
 to-stripe/to-stripe
-to-stripe/stripe-keys.go

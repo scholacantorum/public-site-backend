@@ -9,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/scholacantorum/public-site-backend/private"
 )
 
 var threads sync.WaitGroup
@@ -75,8 +77,8 @@ to our postal mail list.
 Regards,
 The Web Site
 `, name, address, city, state, zip)
-		if err := smtp.SendMail("smtp.gmail.com:587",
-			smtp.PlainAuth("", "admin@scholacantorum.org", "3ayoP4vEfkLw", "smtp.gmail.com"),
+		if err := smtp.SendMail(private.SMTPServer,
+			smtp.PlainAuth("", private.SMTPUsername, private.SMTPPassword, private.SMTPHost),
 			"admin@scholacantorum.org", toaddrs, message.Bytes()); err != nil {
 			fmt.Fprintf(os.Stderr, "ERROR: can't send email for mailing list request: %s\n", err)
 		}

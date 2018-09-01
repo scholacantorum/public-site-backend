@@ -5,20 +5,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"net/http/cgi"
-	"net/smtp"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
+
+	"github.com/scholacantorum/public-site-backend/private"
 
 	"github.com/stripe/stripe-go"
 	"github.com/stripe/stripe-go/customer"
 	sorder "github.com/stripe/stripe-go/order"
+	"github.com/stripe/stripe-go/sku"
 )
 
 type orderinfo struct {
@@ -40,21 +45,12 @@ type orderinfo struct {
 	OrderID     string `json:",omitempty"`
 	ChargeID    string `json:",omitempty"`
 	Error       string `json:",omitempty"`
-	itempi      productinfo
-	couponpi    productinfo
-}
-
-type productinfo interface {
-	amount(int) int64
-	description(int) string
-	thankyou(int) string
-	message() string
+	sku         *stripe.SKU
 }
 
 var stateRE = regexp.MustCompile(`(?i)^[a-z][a-z]$`)
 var zipRE = regexp.MustCompile(`^[0-9]{5}(?:-[0-9]{4})?$`)
 
-var threads sync.WaitGroup
 var orderNumberFile string
 var orderLogFile string
 var emailTo []string
@@ -63,7 +59,6 @@ var order orderinfo
 func main() {
 	http.Handle("/backend/to-stripe", http.HandlerFunc(handler))
 	cgi.Serve(nil)
-	threads.Wait()
 }
 
 func handler(w http.ResponseWriter, r *http.Request) {
@@ -94,8 +89,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		cancelOrder()
 		return
 	}
-	threads.Add(1)
-	go sendEmail()
+	sendEmail()
 	w.WriteHeader(http.StatusOK)
 }
 
@@ -110,12 +104,12 @@ func checkRequestMethod(w http.ResponseWriter, r *http.Request) bool {
 func getMode(w http.ResponseWriter) bool {
 	switch cwd, _ := os.Getwd(); cwd {
 	case "/home/scholacantorum/scholacantorum.org/backend":
-		stripe.Key = stripeLiveSecretKey
+		stripe.Key = private.StripeLiveSecretKey
 		orderNumberFile = "/home/scholacantorum/order-number"
 		orderLogFile = "/home/scholacantorum/order-log"
 		emailTo = []string{"info@scholacantorum.org", "admin@scholacantorum.org"}
 	case "/home/scholacantorum/new.scholacantorum.org/backend":
-		stripe.Key = stripeTestSecretKey
+		stripe.Key = private.StripeTestSecretKey
 		orderNumberFile = "/home/scholacantorum/test-order-number"
 		orderLogFile = "/home/scholacantorum/test-order-log"
 		emailTo = []string{"admin@scholacantorum.org"}
@@ -191,6 +185,8 @@ func getOrderData(w http.ResponseWriter, r *http.Request) bool {
 }
 
 func validateOrderData(w http.ResponseWriter) bool {
+	var err error
+
 	order.Name = strings.TrimSpace(order.Name)
 	if order.Name == "" {
 		sendError(w, "Please supply your name.")
@@ -229,13 +225,13 @@ func validateOrderData(w http.ResponseWriter) bool {
 		sendError(w, "")
 		return false
 	}
-	if order.itempi = products[order.Product]; order.Quantity > 0 && order.itempi == nil {
-		sendError(w, "")
-		return false
-	}
-	order.Coupon = strings.ToUpper(strings.TrimSpace(order.Coupon))
-	if order.Coupon != "" {
-		if order.couponpi = products[order.Product+"_"+order.Coupon]; order.couponpi == nil {
+	if order.Product != "" {
+		if order.sku, err = getSKU(order.Product); err != nil {
+			sendError(w, "")
+			return false
+		}
+		order.Coupon = strings.ToUpper(strings.TrimSpace(order.Coupon))
+		if order.Coupon != order.sku.Attributes["coupon"] {
 			sendError(w, "The coupon code is not recognized.")
 			return false
 		}
@@ -249,6 +245,20 @@ func validateOrderData(w http.ResponseWriter) bool {
 	return true
 }
 
+func getSKU(id string) (s *stripe.SKU, err error) {
+	pp := stripe.SKUParams{}
+	pp.AddExpand("product")
+	if s, err = sku.Get(id, &pp); err != nil {
+		return nil, err
+	}
+	if s.Attributes["coupon"] == "-" {
+		s.Attributes["coupon"] = ""
+	} else {
+		s.Attributes["coupon"] = strings.ToUpper(s.Attributes["coupon"])
+	}
+	return s, nil
+}
+
 func findOrCreateCustomer(w http.ResponseWriter) bool {
 	var clistp *stripe.CustomerListParams
 	var iter *customer.Iter
@@ -260,7 +270,7 @@ func findOrCreateCustomer(w http.ResponseWriter) bool {
 	iter = customer.List(clistp)
 	for iter.Next() {
 		c := iter.Customer()
-		if c.Description == order.Name && c.Shipping == nil && c.Shipping.Name == order.Name &&
+		if c.Description == order.Name && c.Shipping != nil && c.Shipping.Name == order.Name &&
 			c.Shipping.Address.Line1 == order.Address && c.Shipping.Address.Line2 == "" &&
 			c.Shipping.Address.City == order.City && c.Shipping.Address.State == order.State &&
 			c.Shipping.Address.PostalCode == order.Zip {
@@ -302,22 +312,13 @@ func createOrder(w http.ResponseWriter) bool {
 	}
 	if order.Quantity > 0 {
 		params.Items = append(params.Items, &stripe.OrderItemParams{
-			Amount:      stripe.Int64(order.itempi.amount(order.Quantity)),
+			Amount:      stripe.Int64(int64(order.Quantity) * order.sku.Price),
 			Currency:    stripe.String(string(stripe.CurrencyUSD)),
-			Description: stripe.String(order.itempi.description(order.Quantity)),
+			Description: stripe.String(order.sku.Product.Name),
 			Parent:      &order.Product,
 			Quantity:    stripe.Int64(int64(order.Quantity)),
 			Type:        stripe.String(string(stripe.OrderItemTypeSKU)),
 		})
-		if order.couponpi != nil {
-			params.Items = append(params.Items, &stripe.OrderItemParams{
-				Amount:      stripe.Int64(order.couponpi.amount(order.Quantity)),
-				Currency:    stripe.String(string(stripe.CurrencyUSD)),
-				Description: stripe.String(order.couponpi.description(order.Quantity)),
-				Quantity:    stripe.Int64(int64(order.Quantity)),
-				Type:        stripe.String(string(stripe.OrderItemTypeDiscount)),
-			})
-		}
 	}
 	if order.Donation > 0 {
 		params.Items = append(params.Items, &stripe.OrderItemParams{
@@ -374,66 +375,73 @@ func cancelOrder() {
 }
 
 func sendEmail() {
-	var message bytes.Buffer
+	var cmd *exec.Cmd
 	var typename string
-	var thankyou string
+	var prodtext []byte
+	var dontext []byte
+	var pipe io.WriteCloser
 	var err error
 
-	if order.itempi != nil {
+	emailTo = append(emailTo, order.Email)
+	cmd = exec.Command("/home/scholacantorum/bin/send-email", emailTo...)
+	if pipe, err = cmd.StdinPipe(); err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: can't pipe to send-email: %s\n", err)
+		return
+	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err = cmd.Start(); err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: can't start send-email: %s\n\n", err)
+		return
+	}
+
+	if order.sku != nil {
 		typename = "Order"
-		thankyou = order.itempi.thankyou(order.Quantity)
-		if order.Donation != 0 {
-			thankyou = fmt.Sprintf("%s, and for your generous donation of $%d.", thankyou[:len(thankyou)-1], order.Donation)
-		} else {
-			thankyou += "."
+		if prodtext, err = ioutil.ReadFile(filepath.Join("../confirms", order.sku.Product.ID, "index.html")); err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
+			return
 		}
 	} else {
 		typename = "Donation"
-		thankyou = fmt.Sprintf("Thank you for your generous donation of $%d.", order.Donation)
-	}
-	fmt.Fprint(&message, "From: Schola Cantorum Web Site <admin@scholacantorum.org>\r\n")
-	fmt.Fprintf(&message, "To: %s <%s>\r\n", order.Name, order.Email)
-	fmt.Fprint(&message, "Reply-To: info@scholacantorum.org\r\n")
-	fmt.Fprintf(&message, "Subject: Schola Cantorum %s #%d\r\n", typename, order.OrderNumber)
-	fmt.Fprint(&message, "Content-Type: multipart/related; boundary=SCHOLA_MESSAGE_BOUNDARY\r\n")
-	fmt.Fprint(&message, "Content-Transfer-Encoding: quoted-printable\r\n\r\n")
-	fmt.Fprint(&message, "--SCHOLA_MESSAGE_BOUNDARY\r\n")
-	fmt.Fprint(&message, "Content-Type: text/html; charset=UTF-8\r\n\r\n")
-	fmt.Fprint(&message, `
-<!DOCTYPE html><html><body style="margin:0">
-<div style="width:600px;margin:0 auto">
-<div style="margin-bottom:24px"><img src="cid:SCHOLA_LOGO" alt="[Schola Cantorum]" style="border-width:0"></div>
-`)
-	fmt.Fprintf(&message, "<p>Greetings, %s:</p>\n", html.EscapeString(order.Name))
-	fmt.Fprintf(&message, "<p>%s</p>\n", html.EscapeString(thankyou))
-	if order.itempi != nil {
-		fmt.Fprint(&message, order.itempi.message())
 	}
 	if order.Donation > 0 {
-		fmt.Fprint(&message, `
-<p>Your donation is tax-deductible. Schola Cantorum’s tax ID number is 94-2597822.
-A confirmation letter will be mailed to the billing address you provided.</p>
-`)
+		if dontext, err = ioutil.ReadFile(filepath.Join("../confirms", "donation", "index.html")); err != nil {
+			fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
+			return
+		}
 	}
-	fmt.Fprint(&message, `
-<p>Sincerely yours,<br>Schola Cantorum</p>
-<p>Web site: <a href="https://scholacantorum.org">scholacantorum.org</a><br>
-Email: <a href="mailto:info@scholacantorum.org">info@scholacantorum.org</a><br>
-Phone: 650-254-1700</p></body></html>
-`)
-	fmt.Fprint(&message, "--SCHOLA_MESSAGE_BOUNDARY\r\n")
-	fmt.Fprint(&message, "Content-Type: image/gif\r\n")
-	fmt.Fprint(&message, "Content-Transfer-Encoding: base64\r\n")
-	fmt.Fprint(&message, "Content-ID: <SCHOLA_LOGO>\r\n\r\n")
-	fmt.Fprint(&message, mailLogo)
-	fmt.Fprint(&message, "--SCHOLA_MESSAGE_BOUNDARY--\r\n")
-	emailTo = append(emailTo, order.Email)
-	if err = smtp.SendMail("smtp.gmail.com:587",
-		smtp.PlainAuth("", "admin@scholacantorum.org", "3ayoP4vEfkLw", "smtp.gmail.com"),
-		"admin@scholacantorum.org", emailTo, message.Bytes()); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: can't send email for order %d: %s\n", order.OrderNumber, err)
+	fmt.Fprintf(pipe, `From: Schola Cantorum Web Site <admin@scholacantorum.org>
+To: %s <%s>
+Reply-To: info@scholacantorum.org
+Subject: Schola Cantorum %s #%d
+
+<p>Dear %s,</p>
+`, order.Name, order.Email, typename, order.OrderNumber, html.EscapeString(order.Name))
+
+	if prodtext != nil {
+		prodtext = bytes.Replace(prodtext, []byte("PRICE"), []byte(strconv.Itoa(int(order.sku.Price/100))), -1)
+		if order.Quantity == 1 {
+			prodtext = bytes.Replace(prodtext, []byte("QTY"), []byte("one"), -1)
+			prodtext = bytes.Replace(prodtext, []byte("(S)"), []byte{}, -1)
+			prodtext = bytes.Replace(prodtext, []byte("(ES)"), []byte{}, -1)
+			prodtext = bytes.Replace(prodtext, []byte("_EACH"), []byte{}, -1)
+		} else {
+			prodtext = bytes.Replace(prodtext, []byte("QTY"), []byte(strconv.Itoa(order.Quantity)), -1)
+			prodtext = bytes.Replace(prodtext, []byte("(S)"), []byte{'s'}, -1)
+			prodtext = bytes.Replace(prodtext, []byte("(ES)"), []byte{'e', 's'}, -1)
+			prodtext = bytes.Replace(prodtext, []byte("_EACH"), []byte(" each"), -1)
+		}
+		pipe.Write(prodtext)
 	}
-	threads.Done()
+	if dontext != nil {
+		dontext = bytes.Replace(dontext, []byte("DONATION"), []byte(strconv.Itoa(order.Donation)), -1)
+		pipe.Write(dontext)
+	}
+	if order.Quantity > 1 || (order.Quantity == 1 && order.Donation > 0) {
+		fmt.Fprintf(pipe, "<p>The total charge to your card was $%d.</p>", order.Total)
+	}
+	fmt.Fprintf(pipe, `<p>Sincerely yours,<br>Schola Cantorum</p><p>Web: <a href="https://scholacantorum.org">scholacantorum.org</a><br>Email: <a href="mailto:info@scholacantorum.org">info@scholacantorum.org</a><br>Phone: (650) 254-1700</p>`)
+	pipe.Close()
 }
 
 func sendError(w http.ResponseWriter, message string) {

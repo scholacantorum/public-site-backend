@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/scholacantorum/public-site-backend/private"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -34,7 +36,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	encoded := make([]byte, base64.StdEncoding.EncodedLen(len(hashed)))
 	base64.StdEncoding.Encode(encoded, hashed[:])
 	var user string
-	for u, p := range passwords {
+	for u, p := range private.PublishPasswords {
 		if bcrypt.CompareHashAndPassword(p, encoded) == nil {
 			user = u
 			break
