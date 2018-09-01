@@ -270,22 +270,13 @@ func findOrCreateCustomer(w http.ResponseWriter) bool {
 	iter = customer.List(clistp)
 	for iter.Next() {
 		c := iter.Customer()
-		if c.Description == order.Name && c.Shipping != nil && c.Shipping.Name == order.Name &&
-			c.Shipping.Address.Line1 == order.Address && c.Shipping.Address.Line2 == "" &&
-			c.Shipping.Address.City == order.City && c.Shipping.Address.State == order.State &&
-			c.Shipping.Address.PostalCode == order.Zip {
+		if c.Description == order.Name && c.Email == order.Email {
 			cust = c
 			break
 		}
 	}
 	if cust == nil {
-		cust, err = customer.New(&stripe.CustomerParams{
-			Description: &order.Name, Email: &order.Email, Shipping: &stripe.CustomerShippingDetailsParams{
-				Name: &order.Name, Address: &stripe.AddressParams{
-					Line1: &order.Address, City: &order.City, State: &order.State, PostalCode: &order.Zip,
-				},
-			},
-		})
+		cust, err = customer.New(&stripe.CustomerParams{Description: &order.Name, Email: &order.Email})
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "ERROR: stripe create customer for order %d: %s\n", order.OrderNumber, err)
 			sendError(w, "")
@@ -304,11 +295,23 @@ func createOrder(w http.ResponseWriter) bool {
 	params = &stripe.OrderParams{
 		Currency: stripe.String(string(stripe.CurrencyUSD)),
 		Customer: &order.CustomerID,
+		Email:    &order.Email,
 		Params: stripe.Params{
 			Metadata: map[string]string{
 				"order-number": strconv.Itoa(order.OrderNumber),
 			},
 		},
+	}
+	if order.Address != "" {
+		params.Shipping = &stripe.ShippingParams{
+			Name: &order.Name,
+			Address: &stripe.AddressParams{
+				Line1:      &order.Address,
+				City:       &order.City,
+				State:      &order.State,
+				PostalCode: &order.Zip,
+			},
+		}
 	}
 	if order.Quantity > 0 {
 		params.Items = append(params.Items, &stripe.OrderItemParams{
