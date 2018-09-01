@@ -114,7 +114,7 @@ func getMode(w http.ResponseWriter) bool {
 		orderLogFile = "/home/scholacantorum/test-order-log"
 		emailTo = []string{"admin@scholacantorum.org"}
 	default:
-		fmt.Fprintf(os.Stderr, "ERROR: backend/to-stripe run from unrecognized directory\n")
+		fmt.Fprintf(os.Stderr, "ERROR: backend/to-stripe run from unrecognized directory %s\n", cwd)
 		w.WriteHeader(http.StatusInternalServerError)
 		return false
 	}
