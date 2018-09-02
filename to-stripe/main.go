@@ -202,23 +202,15 @@ func validateOrderData(w http.ResponseWriter) bool {
 		return false
 	}
 	order.Address = strings.TrimSpace(order.Address)
-	if order.Address == "" {
-		sendError(w, "Please supply your billing address.")
-		return false
-	}
 	order.City = strings.TrimSpace(order.City)
-	if order.City == "" {
-		sendError(w, "Please supply your billing address city.")
-		return false
-	}
 	order.State = strings.TrimSpace(order.State)
-	if !stateRE.MatchString(order.State) {
+	if order.State != "" && !stateRE.MatchString(order.State) {
 		sendError(w, "Please provide your billing address state as a two-letter code.")
 		return false
 	}
 	order.Zip = strings.TrimSpace(order.Zip)
-	if !zipRE.MatchString(order.Zip) {
-		sendError(w, "Please provide your billing zip code (5 or 9 digits).")
+	if order.Zip != "" && !zipRE.MatchString(order.Zip) {
+		sendError(w, "Please provide your billing zip code in 5- or 9-digit format.")
 		return false
 	}
 	if order.Quantity < 0 || (order.Quantity == 0 && order.Product != "") {
@@ -305,19 +297,19 @@ func createOrder(w http.ResponseWriter) bool {
 				"order-number": strconv.Itoa(order.OrderNumber),
 			},
 		},
+		Shipping: &stripe.ShippingParams{
+			Name: &order.Name,
+		},
 	}
 	if order.PayType != "" {
 		params.Params.Metadata["payment-type"] = order.PayType
 	}
 	if order.Address != "" {
-		params.Shipping = &stripe.ShippingParams{
-			Name: &order.Name,
-			Address: &stripe.AddressParams{
-				Line1:      &order.Address,
-				City:       &order.City,
-				State:      &order.State,
-				PostalCode: &order.Zip,
-			},
+		params.Shipping.Address = &stripe.AddressParams{
+			Line1:      &order.Address,
+			City:       &order.City,
+			State:      &order.State,
+			PostalCode: &order.Zip,
 		}
 	}
 	if order.Quantity > 0 {
