@@ -15,6 +15,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/stripe/stripe-go/customer"
+
 	"github.com/scholacantorum/public-site-backend/backend-log"
 	"github.com/scholacantorum/public-site-backend/private"
 	"github.com/stripe/stripe-go"
@@ -273,12 +275,26 @@ func updateRowsForOrder(svc *sheets.Service, sheet string, sheetnum int64, o *st
 		addValue(ucr, o.ID)
 
 		// Columns EFGHIJ: PatronName, PatronEmail, PatronAddress, PatronCity, PatronState, PatronZip
-		addValue(ucr, o.Shipping.Name)
-		addValue(ucr, o.Email)
-		addValue(ucr, o.Shipping.Address.Line1)
-		addValue(ucr, o.Shipping.Address.City)
-		addValue(ucr, o.Shipping.Address.State)
-		addValue(ucr, o.Shipping.Address.PostalCode)
+		if o.Shipping != nil {
+			addValue(ucr, o.Shipping.Name)
+			addValue(ucr, o.Email)
+			addValue(ucr, o.Shipping.Address.Line1)
+			addValue(ucr, o.Shipping.Address.City)
+			addValue(ucr, o.Shipping.Address.State)
+			addValue(ucr, o.Shipping.Address.PostalCode)
+		} else {
+			var cn string
+
+			if cn, err = getCustomerName(o.Customer.ID); err != nil {
+				return err
+			}
+			addValue(ucr, cn)
+			addValue(ucr, o.Email)
+			addValue(ucr, nil)
+			addValue(ucr, nil)
+			addValue(ucr, nil)
+			addValue(ucr, nil)
+		}
 
 		// Columns KL: Product, SKU
 		if sku, err = getSKU(i.Parent); err != nil {
@@ -342,4 +358,22 @@ func getSKU(id string) (s *stripe.SKU, err error) {
 	}
 	skus[id] = s
 	return s, nil
+}
+
+// customerNames is a cache of customer names retrieved from Stripe.
+var customerNames = map[string]string{}
+
+// getCustomerName returns the name of the customer with the specified ID.
+func getCustomerName(id string) (name string, err error) {
+	var cust *stripe.Customer
+	var ok bool
+
+	if name, ok = customerNames[id]; ok {
+		return name, nil
+	}
+	if cust, err = customer.Get(id, nil); err != nil {
+		return "", err
+	}
+	customerNames[id] = cust.Description
+	return cust.Description, nil
 }

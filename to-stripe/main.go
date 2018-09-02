@@ -297,19 +297,19 @@ func createOrder(w http.ResponseWriter) bool {
 				"order-number": strconv.Itoa(order.OrderNumber),
 			},
 		},
-		Shipping: &stripe.ShippingParams{
-			Name: &order.Name,
-		},
 	}
 	if order.PayType != "" {
 		params.Params.Metadata["payment-type"] = order.PayType
 	}
 	if order.Address != "" {
-		params.Shipping.Address = &stripe.AddressParams{
-			Line1:      &order.Address,
-			City:       &order.City,
-			State:      &order.State,
-			PostalCode: &order.Zip,
+		params.Shipping = &stripe.ShippingParams{
+			Name: &order.Name,
+			Address: &stripe.AddressParams{
+				Line1:      &order.Address,
+				City:       &order.City,
+				State:      &order.State,
+				PostalCode: &order.Zip,
+			},
 		}
 	}
 	if order.Quantity > 0 {
