@@ -259,7 +259,11 @@ func updateRowsForOrder(svc *sheets.Service, sheet string, sheetnum int64, o *st
 		addValue(ucr, time.Unix(o.Created, 0))
 
 		// Column C: Processor
-		addValue(ucr, "Stripe")
+		if pt := o.Metadata["payment-type"]; pt != "" {
+			addValue(ucr, "Stripe "+pt)
+		} else {
+			addValue(ucr, "Stripe")
+		}
 
 		// Column D: ProcessorOrderNumber
 		addValue(ucr, o.ID)

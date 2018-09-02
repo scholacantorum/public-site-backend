@@ -40,6 +40,7 @@ type orderinfo struct {
 	Donation    int    `json:",omitempty"`
 	Coupon      string `json:",omitempty"`
 	Total       int64  `json:",omitempty"`
+	PayType     string `json:",omitempty"`
 	PaySource   string `json:",omitempty"`
 	CustomerID  string `json:",omitempty"`
 	OrderID     string `json:",omitempty"`
@@ -301,6 +302,9 @@ func createOrder(w http.ResponseWriter) bool {
 				"order-number": strconv.Itoa(order.OrderNumber),
 			},
 		},
+	}
+	if order.PayType != "" {
+		params.Params.Metadata["payment-type"] = order.PayType
 	}
 	if order.Address != "" {
 		params.Shipping = &stripe.ShippingParams{
