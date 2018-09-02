@@ -18,8 +18,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/scholacantorum/public-site-backend/backend-log"
 	"github.com/scholacantorum/public-site-backend/private"
-
 	"github.com/stripe/stripe-go"
 	"github.com/stripe/stripe-go/customer"
 	sorder "github.com/stripe/stripe-go/order"
@@ -58,6 +58,7 @@ var emailTo []string
 var order orderinfo
 
 func main() {
+	belog.LogApp = "to-stripe"
 	http.Handle("/backend/to-stripe", http.HandlerFunc(handler))
 	cgi.Serve(nil)
 }
@@ -109,13 +110,15 @@ func getMode(w http.ResponseWriter) bool {
 		orderNumberFile = "/home/scholacantorum/order-number"
 		orderLogFile = "/home/scholacantorum/order-log"
 		emailTo = []string{"info@scholacantorum.org", "admin@scholacantorum.org"}
+		belog.LogMode = "LIVE"
 	case "/home/scholacantorum/new.scholacantorum.org/backend":
 		stripe.Key = private.StripeTestSecretKey
 		orderNumberFile = "/home/scholacantorum/test-order-number"
 		orderLogFile = "/home/scholacantorum/test-order-log"
 		emailTo = []string{"admin@scholacantorum.org"}
+		belog.LogMode = "TEST"
 	default:
-		fmt.Fprintf(os.Stderr, "ERROR: backend/to-stripe run from unrecognized directory %s\n", cwd)
+		belog.Log("run from unrecognized directory %s", cwd)
 		w.WriteHeader(http.StatusInternalServerError)
 		return false
 	}
@@ -147,7 +150,7 @@ func getOrderNumber(w http.ResponseWriter) bool {
 	}
 	return true
 ERROR:
-	fmt.Fprintf(os.Stderr, "ERROR: order-number: %s\n", err)
+	belog.Log("order-number: %s", err)
 	w.WriteHeader(http.StatusInternalServerError)
 	return false
 }
@@ -158,18 +161,18 @@ func logOrder() {
 	var err error
 
 	if fh, err = os.OpenFile(orderLogFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: open order-log: %s\n", err)
+		belog.Log("open order-log: %s", err)
 		return
 	}
 	enc = json.NewEncoder(fh)
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "")
 	if err = enc.Encode(&order); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: write order-log: %s\n", err)
+		belog.Log("write order-log: %s", err)
 		return
 	}
 	if err = fh.Close(); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: order-log: %s\n", err)
+		belog.Log("order-log: %s", err)
 		return
 	}
 }
@@ -177,7 +180,7 @@ func logOrder() {
 func getOrderData(w http.ResponseWriter, r *http.Request) bool {
 	var err error
 	if err = json.NewDecoder(r.Body).Decode(&order); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: request body JSON: %s\n", err)
+		belog.Log("request body JSON: %s", err)
 		sendError(w, "Details of your order were not correctly received.")
 		return false
 	}
@@ -279,7 +282,7 @@ func findOrCreateCustomer(w http.ResponseWriter) bool {
 	if cust == nil {
 		cust, err = customer.New(&stripe.CustomerParams{Description: &order.Name, Email: &order.Email})
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "ERROR: stripe create customer for order %d: %s\n", order.OrderNumber, err)
+			belog.Log("stripe create customer for order %d: %s", order.OrderNumber, err)
 			sendError(w, "")
 			return false
 		}
@@ -338,7 +341,7 @@ func createOrder(w http.ResponseWriter) bool {
 		})
 	}
 	if o, err = sorder.New(params); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: stripe create order %d: %s", order.OrderNumber, err)
+		belog.Log("stripe create order %d: %s", order.OrderNumber, err)
 		sendError(w, "")
 		return false
 	}
@@ -361,7 +364,7 @@ func payOrder(w http.ResponseWriter) bool {
 		}
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: stripe pay order %d: %s", order.OrderNumber, err)
+		belog.Log("stripe pay order %d: %s", order.OrderNumber, err)
 		sendError(w, "")
 		return false
 	}
@@ -377,7 +380,7 @@ func cancelOrder() {
 		Status: stripe.String(string(stripe.OrderStatusCanceled)),
 	}
 	if _, err = sorder.Update(order.OrderID, params); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: stripe cancel order %d: %s\n", order.OrderNumber, err)
+		belog.Log("stripe cancel order %d: %s", order.OrderNumber, err)
 	}
 }
 
@@ -392,20 +395,20 @@ func sendEmail() {
 	emailTo = append(emailTo, order.Email)
 	cmd = exec.Command("/home/scholacantorum/bin/send-email", emailTo...)
 	if pipe, err = cmd.StdinPipe(); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: can't pipe to send-email: %s\n", err)
+		belog.Log("can't pipe to send-email: %s", err)
 		return
 	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err = cmd.Start(); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: can't start send-email: %s\n\n", err)
+		belog.Log("can't start send-email: %s", err)
 		return
 	}
 
 	if order.sku != nil {
 		typename = "Order"
 		if prodtext, err = ioutil.ReadFile(filepath.Join("../confirms", order.sku.Product.ID, "index.html")); err != nil {
-			fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
+			belog.Log("%s", err)
 			return
 		}
 	} else {
@@ -413,7 +416,7 @@ func sendEmail() {
 	}
 	if order.Donation > 0 {
 		if dontext, err = ioutil.ReadFile(filepath.Join("../confirms", "donation", "index.html")); err != nil {
-			fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
+			belog.Log("%s", err)
 			return
 		}
 	}

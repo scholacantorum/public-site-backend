@@ -10,12 +10,14 @@ import (
 	"os/exec"
 	"time"
 
+	"github.com/scholacantorum/public-site-backend/backend-log"
 	"github.com/scholacantorum/public-site-backend/private"
-
 	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
+	belog.LogApp = "publish-site"
+	belog.LogMode = "LIVE"
 	http.Handle("/backend/publish-site", http.HandlerFunc(handler))
 	cgi.Serve(nil)
 }
@@ -49,13 +51,13 @@ func handler(w http.ResponseWriter, r *http.Request) {
 
 	// Step 2: Build the sandbox site, to make sure that the site builds OK.
 	if err := os.Chdir("/home/scholacantorum/schola6p"); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: chdir schola6p: %s\n", err)
+		belog.Log("chdir schola6p: %s", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 	cmd := exec.Command("/home/scholacantorum/bin/hugo", "--quiet", "--config", "sandbox.yaml", "--cleanDestinationDir")
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: hugo sandbox: %s\n", err)
+		belog.Log("hugo sandbox: %s", err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -63,7 +65,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	// Step 3: Build the production site.
 	cmd = exec.Command("/home/scholacantorum/bin/hugo", "--quiet", "--config", "production.yaml", "--cleanDestinationDir")
 	if err := cmd.Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: hugo production: %s\n", err)
+		belog.Log("hugo production: %s", err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}

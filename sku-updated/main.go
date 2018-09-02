@@ -13,6 +13,7 @@ import (
 	"os"
 	"syscall"
 
+	"github.com/scholacantorum/public-site-backend/backend-log"
 	"github.com/scholacantorum/public-site-backend/private"
 	"github.com/stripe/stripe-go"
 	"github.com/stripe/stripe-go/product"
@@ -20,6 +21,7 @@ import (
 )
 
 func main() {
+	belog.LogApp = "sku-updated"
 	http.Handle("/backend/sku-updated", http.HandlerFunc(handler))
 	cgi.Serve(nil)
 }
@@ -43,6 +45,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(&out, `{"test":{`)
 	stripe.Key = private.StripeTestSecretKey
 	stripe.LogLevel = 1
+	belog.LogMode = "TEST"
 	if err = getSKUs(&out); err != nil {
 		goto ERROR
 	}
@@ -50,6 +53,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	// Then get the live mode SKUs.
 	fmt.Fprint(&out, `},"live":{`)
 	stripe.Key = private.StripeLiveSecretKey
+	belog.LogMode = "LIVE"
 	if err = getSKUs(&out); err != nil {
 		goto ERROR
 	}
@@ -62,7 +66,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	return
 
 ERROR:
-	fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
+	belog.Log("%s", err)
 	w.WriteHeader(http.StatusInternalServerError)
 }
 

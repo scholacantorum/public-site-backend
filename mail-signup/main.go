@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/scholacantorum/public-site-backend/backend-log"
 	"github.com/scholacantorum/public-site-backend/private"
 )
 
@@ -18,6 +19,7 @@ var toaddr string
 var toaddrs []string
 
 func main() {
+	belog.LogApp = "mail-signup"
 	http.Handle("/backend/mail-signup", http.HandlerFunc(handler))
 	cgi.Serve(nil)
 	threads.Wait()
@@ -34,11 +36,13 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	case "/home/scholacantorum/scholacantorum.org/backend", "/home/scholacantorum/scholacantorum.org/public/backend":
 		toaddr = "info@scholacantorum.org"
 		toaddrs = []string{"info@scholacantorum.org", "admin@scholacantorum.org"}
+		belog.LogMode = "LIVE"
 	case "/home/scholacantorum/new.scholacantorum.org/backend":
 		toaddr = "admin@scholacantorum.org"
 		toaddrs = []string{"admin@scholacantorum.org"}
+		belog.LogMode = "TEST"
 	default:
-		fmt.Fprintf(os.Stderr, "ERROR: backend/mail-signup run from unrecognized directory\n")
+		belog.Log("run from unrecognized directory")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}

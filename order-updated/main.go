@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/scholacantorum/public-site-backend/backend-log"
 	"github.com/scholacantorum/public-site-backend/private"
 	"github.com/stripe/stripe-go"
 	"github.com/stripe/stripe-go/sku"
@@ -30,6 +31,7 @@ var webhookSecret string
 var sheet string
 
 func main() {
+	belog.LogApp = "order-updated"
 	http.Handle("/backend/order-updated", http.HandlerFunc(handler))
 	cgi.Serve(nil)
 }
@@ -56,10 +58,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		webhookSecret = private.StripeLiveOrderUpdatedWebhookSecret
 		sheet = private.OrderSheetLive
 		stripe.Key = private.StripeLiveSecretKey
+		belog.LogMode = "LIVE"
 	case "/home/scholacantorum/new.scholacantorum.org/backend":
 		webhookSecret = private.StripeTestOrderUpdatedWebhookSecret
 		sheet = private.OrderSheetTest
 		stripe.Key = private.StripeTestSecretKey
+		belog.LogMode = "TEST"
 	default:
 		err = fmt.Errorf("backend/order-updated run from unrecognized directory")
 		goto ERROR
@@ -149,7 +153,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	return
 
 ERROR:
-	fmt.Fprintf(os.Stderr, "ERROR: %s\n", err)
+	belog.Log("%s", err)
 	w.WriteHeader(http.StatusInternalServerError)
 }
 

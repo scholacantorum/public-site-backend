@@ -15,6 +15,7 @@ import (
 	"net/textproto"
 	"os"
 
+	"github.com/scholacantorum/public-site-backend/backend-log"
 	"github.com/scholacantorum/public-site-backend/private"
 )
 
@@ -28,6 +29,7 @@ func main() {
 	var hdr textproto.MIMEHeader
 	var err error
 
+	belog.LogApp = "send-email"
 	input = bufio.NewScanner(os.Stdin)
 	for input.Scan() {
 		if input.Text() == "" {
@@ -49,7 +51,7 @@ func main() {
 		htmlqp.Write([]byte{'\n'})
 	}
 	if err = input.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: can't read input: %s\n", err)
+		belog.Log("can't read input: %s", err)
 		os.Exit(1)
 	}
 	htmlqp.Write([]byte("</div></body></html>\n"))
@@ -63,7 +65,7 @@ func main() {
 	if err = smtp.SendMail(private.SMTPServer,
 		smtp.PlainAuth("", private.SMTPUsername, private.SMTPPassword, private.SMTPHost),
 		"admin@scholacantorum.org", os.Args[1:], buf.Bytes()); err != nil {
-		fmt.Fprintf(os.Stderr, "ERROR: can't send email: %s\n", err)
+		belog.Log("can't send email: %s", err)
 		os.Exit(1)
 	}
 }
