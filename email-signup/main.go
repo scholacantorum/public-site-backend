@@ -65,6 +65,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 <input type="hidden" name="EMAILTYPE" value="html">
 <input type="hidden" name="b_4eefbbf83086ccdfdac86e1c3_5df4425cfb">
 </form>
-<script>document.subform.submit()</script></body></html>
+<script>document.getElementById('subform').submit()</script></body></html>
 `, names[0], names[1], o.Email)
 }
