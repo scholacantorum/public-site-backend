@@ -92,7 +92,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sendEmail()
-	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "text/plain")
+	w.Write([]byte(order.OrderID))
 }
 
 func checkRequestMethod(w http.ResponseWriter, r *http.Request) bool {
