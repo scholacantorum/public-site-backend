@@ -56,9 +56,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Emit the page.
-	fmt.Printf(`Content-Type: text/html
-
-<html><body>
+	w.Header().Set("Content-Type", "text/html")
+	fmt.Fprintf(w, `<html><body>
 <form id="subform" action="https://scholacantorum.us2.list-manage.com/subscribe/post?u=4eefbbf83086ccdfdac86e1c3&amp;id=5df4425cfb" method="post" novalidate>
 <input type="hidden" name="FNAME" value="%s">
 <input type="hidden" name="LNAME" value="%s">
