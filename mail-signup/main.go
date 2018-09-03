@@ -10,6 +10,9 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/stripe/stripe-go"
+	"github.com/stripe/stripe-go/order"
+
 	"github.com/scholacantorum/public-site-backend/backend-log"
 	"github.com/scholacantorum/public-site-backend/private"
 )
@@ -36,10 +39,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	case "/home/scholacantorum/scholacantorum.org/backend", "/home/scholacantorum/scholacantorum.org/public/backend":
 		toaddr = "info@scholacantorum.org"
 		toaddrs = []string{"info@scholacantorum.org", "admin@scholacantorum.org"}
+		stripe.Key = private.StripeLiveSecretKey
 		belog.LogMode = "LIVE"
 	case "/home/scholacantorum/new.scholacantorum.org/backend":
 		toaddr = "admin@scholacantorum.org"
 		toaddrs = []string{"admin@scholacantorum.org"}
+		stripe.Key = private.StripeTestSecretKey
 		belog.LogMode = "TEST"
 	default:
 		belog.Log("run from unrecognized directory")
@@ -48,11 +53,33 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Step 1.  Gather data.
-	name := strings.TrimSpace(r.FormValue("name"))
-	address := strings.TrimSpace(r.FormValue("address"))
-	city := strings.TrimSpace(r.FormValue("city"))
-	state := strings.TrimSpace(r.FormValue("state"))
-	zip := strings.TrimSpace(r.FormValue("zip"))
+	var orderid, name, address, city, state, zip string
+	if orderid = strings.TrimSpace(r.FormValue("order")); orderid != "" {
+		var o *stripe.Order
+		var err error
+
+		if o, err = order.Get(orderid, nil); err != nil {
+			belog.Log("getting order %s: %s", orderid, err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if o.Shipping == nil {
+			belog.Log("order %s had no shipping", orderid)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		name = o.Shipping.Name
+		address = o.Shipping.Address.Line1
+		city = o.Shipping.Address.City
+		state = o.Shipping.Address.State
+		zip = o.Shipping.Address.PostalCode
+	} else {
+		name = strings.TrimSpace(r.FormValue("name"))
+		address = strings.TrimSpace(r.FormValue("address"))
+		city = strings.TrimSpace(r.FormValue("city"))
+		state = strings.TrimSpace(r.FormValue("state"))
+		zip = strings.TrimSpace(r.FormValue("zip"))
+	}
 
 	// Step 2.  Check the robot trap.
 	if r.FormValue("b_4eefbbf83086ccdfdac86e1c3_5df4425cfb") != "" {
