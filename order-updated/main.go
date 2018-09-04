@@ -15,11 +15,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/stripe/stripe-go/customer"
-
 	"github.com/scholacantorum/public-site-backend/backend-log"
 	"github.com/scholacantorum/public-site-backend/private"
 	"github.com/stripe/stripe-go"
+	"github.com/stripe/stripe-go/customer"
 	"github.com/stripe/stripe-go/sku"
 	"github.com/stripe/stripe-go/webhook"
 	"golang.org/x/oauth2"
@@ -48,10 +47,10 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	var svc *sheets.Service
 	var ss *sheets.Spreadsheet
 	var sheetnum int64
-	var vr *sheets.ValueRange
+	var vr *sheets.BatchGetValuesResponse
+	var requests []*sheets.Request
+	var items = map[string]*stripe.OrderItem{}
 	var onum int
-	var row int
-	var cnt int
 	var err error
 
 	// Determine parameters for mode.
@@ -136,18 +135,182 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		goto ERROR
 	}
 
-	// Get the list of order numbers from the first column.
-	if vr, err = svc.Spreadsheets.Values.Get(sheet, "Orders!A:A").Do(); err != nil {
+	// Get the order IDs and SKUs from columns D and L.
+	if vr, err = svc.Spreadsheets.Values.BatchGet(sheet).Ranges("Orders!D:D", "Orders!L:L").Do(); err != nil {
 		goto ERROR
 	}
 
-	// Find the rows that contain this order, if any; or the place where
-	// rows for this order should be inserted.
-	row, cnt = findOrderRows(vr, onum)
+	// Build the list of SKU lines for this order, net of returns.
+	for _, i := range order.Items {
+		if i.Type == "sku" {
+			li := items[i.Parent]
+			if li == nil {
+				items[i.Parent] = i
+			} else {
+				li.Amount += i.Amount
+				li.Quantity += i.Quantity
+			}
+		}
+	}
+	for _, r := range order.Returns.Data {
+		for _, i := range r.Items {
+			if i.Type == "sku" {
+				li := items[i.Parent]
+				if li == nil { // shouldn't be possible
+					items[i.Parent] = i
+					i.Amount *= -1
+					i.Quantity *= -1
+				} else {
+					li.Amount -= i.Amount
+					li.Quantity -= i.Quantity
+				}
+			}
+		}
+	}
+	for s, i := range items {
+		if i.Quantity == 0 && i.Amount == 0 {
+			delete(items, s)
+		}
+	}
 
-	// Update those rows.
-	if err = updateRowsForOrder(svc, sheet, sheetnum, &order, onum, row, cnt); err != nil {
-		goto ERROR
+	// Walk the list of rows in the spreadsheet, looking for ones that
+	// belong to this order.  We walk from the bottom up so that deletions
+	// don't change row numbers we care about.
+	for row := len(vr.ValueRanges[0].Values) - 1; row >= 0; row-- {
+		var rowoid string
+		var sku string
+		var item *stripe.OrderItem
+		var ok bool
+
+		if len(vr.ValueRanges[0].Values[row]) < 1 {
+			continue
+		}
+		rowoid, ok = vr.ValueRanges[0].Values[row][0].(string)
+		if !ok || rowoid != order.ID {
+			continue
+		}
+		if len(vr.ValueRanges[1].Values[row]) < 1 {
+			continue
+		}
+		sku, ok = vr.ValueRanges[1].Values[row][0].(string)
+		if ok {
+			item, ok = items[sku]
+		}
+		if !ok {
+			// This row is for our order, with an unknown SKU —
+			// probably something that was returned.  We want to
+			// delete the row.
+			requests = append(requests, &sheets.Request{DeleteDimension: &sheets.DeleteDimensionRequest{
+				Range: &sheets.DimensionRange{
+					Dimension:  "ROWS",
+					StartIndex: int64(row),
+					EndIndex:   int64(row) + 1,
+					SheetId:    sheetnum,
+				},
+			}})
+			continue
+		}
+		// We found a row for this SKU.  Update the quantity and total
+		// on it.  We'll leave the unit price unchanged.
+		if sku != "donation" {
+			requests = append(requests, &sheets.Request{UpdateCells: &sheets.UpdateCellsRequest{
+				Start: &sheets.GridCoordinate{
+					SheetId:     sheetnum,
+					RowIndex:    int64(row),
+					ColumnIndex: 12, // M, zero based
+				},
+				Fields: "userEnteredValue",
+				Rows: []*sheets.RowData{{Values: []*sheets.CellData{{
+					UserEnteredValue: &sheets.ExtendedValue{
+						NumberValue: float64(item.Quantity),
+					},
+				}}}},
+			}})
+		}
+		requests = append(requests, &sheets.Request{UpdateCells: &sheets.UpdateCellsRequest{
+			Start: &sheets.GridCoordinate{
+				SheetId:     sheetnum,
+				RowIndex:    int64(row),
+				ColumnIndex: 14, // O, zero based
+			},
+			Fields: "userEnteredValue",
+			Rows: []*sheets.RowData{{Values: []*sheets.CellData{{
+				UserEnteredValue: &sheets.ExtendedValue{NumberValue: float64(item.Amount / 100)},
+			}}}},
+		}})
+		delete(items, sku)
+	}
+
+	// If there are remaining SKUs that we didn't see, append them to the
+	// bottom of the sheet.
+	for _, item := range items {
+		var skudata *stripe.SKU
+		var processor string
+		var qty sheets.ExtendedValue
+		var price sheets.ExtendedValue
+
+		if skudata, err = getSKU(item.Parent); err != nil {
+			goto ERROR
+		}
+		processor = "Stripe"
+		if pt := order.Metadata["payment-type"]; pt != "" {
+			processor = "Stripe " + pt
+		}
+		if order.Shipping == nil {
+			var cn string
+			if cn, err = getCustomerName(order.Customer.ID); err != nil {
+				goto ERROR
+			}
+			order.Shipping = &stripe.Shipping{Name: cn, Address: &stripe.Address{}}
+		}
+		if item.Parent != "donation" {
+			qty.NumberValue = float64(item.Quantity)
+			price.NumberValue = float64(skudata.Price / 100)
+		}
+
+		requests = append(requests, &sheets.Request{AppendCells: &sheets.AppendCellsRequest{
+			SheetId: sheetnum,
+			Fields:  "userEnteredValue",
+			Rows: []*sheets.RowData{{Values: []*sheets.CellData{{
+				UserEnteredValue: &sheets.ExtendedValue{NumberValue: float64(onum)},
+			}, {
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: time.Unix(order.Created, 0).In(time.Local).Format("2016-01-02 15:04:05")},
+			}, {
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: processor},
+			}, {
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: order.ID},
+			}, {
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: order.Shipping.Name},
+			}, {
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: order.Email},
+			}, {
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: order.Shipping.Address.Line1},
+			}, {
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: order.Shipping.Address.City},
+			}, {
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: order.Shipping.Address.State},
+			}, {
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: order.Shipping.Address.PostalCode},
+			}, {
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: skudata.Product.ID},
+			}, {
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: item.Parent},
+			}, {
+				UserEnteredValue: &qty,
+			}, {
+				UserEnteredValue: &price,
+			}, {
+				UserEnteredValue: &sheets.ExtendedValue{NumberValue: float64(item.Amount / 100)},
+			}}}},
+		}})
+	}
+
+	// Execute the batched change.
+	if len(requests) != 0 {
+		_, err = svc.Spreadsheets.BatchUpdate(sheet, &sheets.BatchUpdateSpreadsheetRequest{Requests: requests}).Do()
+		if err != nil {
+			goto ERROR
+		}
 	}
 
 	// We're happy.
@@ -157,192 +320,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 ERROR:
 	belog.Log("%s", err)
 	w.WriteHeader(http.StatusInternalServerError)
-}
-
-// Find the existing rows for an order, or the place where it should be
-// inserted.  The return is the starting row number (zero-indexed), and the
-// number of existing rows for the order at that point.
-func findOrderRows(vr *sheets.ValueRange, onum int) (row, cnt int) {
-	var r []interface{}
-	var rowonum int
-	var err error
-
-	for row, r = range vr.Values {
-		if len(r) < 1 {
-			continue
-		}
-		if rowonum, err = strconv.Atoi(r[0].(string)); err != nil {
-			continue
-		}
-		if rowonum > onum {
-			return row, 0 // insert before this row
-		}
-		if rowonum == onum {
-			break
-		}
-	}
-	if rowonum != onum {
-		return row + 1, 0 // insert at end
-	}
-	for cnt = 1; row+cnt < len(vr.Values); cnt++ {
-		if len(vr.Values[row+cnt]) < 1 {
-			break
-		}
-		if rowonum, err = strconv.Atoi(vr.Values[row+cnt][0].(string)); err != nil {
-			break
-		}
-		if rowonum != onum {
-			break
-		}
-	}
-	return row, cnt
-}
-
-// Update the rows for an order.
-func updateRowsForOrder(svc *sheets.Service, sheet string, sheetnum int64, o *stripe.Order, onum, row, cnt int) (err error) {
-	var items []*stripe.OrderItem
-	var sku *stripe.SKU
-
-	// We want one row for each item, but we don't want Stripe's artificial
-	// items for taxes and shipping.
-	for _, i := range o.Items {
-		if i.Type == "tax" || i.Type == "shipping" {
-			continue
-		}
-		items = append(items, i)
-	}
-
-	// We also want one row for each returned item, with negative quantities
-	// and amounts.
-	for _, r := range o.Returns.Data {
-		for _, i := range r.Items {
-			if i.Type == "tax" || i.Type == "shipping" {
-				continue
-			}
-			i.Quantity = -i.Quantity
-			i.Amount = -i.Amount
-			items = append(items, i)
-		}
-	}
-
-	// If there aren't enough rows for this order in the spreadsheet, insert
-	// some.  If there are too many, remove some.  In either case, work from
-	// the end of whatever's there in hopes of minimal interference with
-	// office notes added by the office staff.
-	var requests []*sheets.Request
-	if cnt < len(items) {
-		requests = append(requests, &sheets.Request{InsertDimension: &sheets.InsertDimensionRequest{
-			Range: &sheets.DimensionRange{
-				SheetId:    sheetnum,
-				Dimension:  "ROWS",
-				StartIndex: int64(row + cnt),
-				EndIndex:   int64(row + len(items)),
-			},
-			InheritFromBefore: true,
-		}})
-	} else if cnt > len(items) {
-		requests = append(requests, &sheets.Request{DeleteDimension: &sheets.DeleteDimensionRequest{
-			Range: &sheets.DimensionRange{
-				SheetId:    sheetnum,
-				Dimension:  "ROWS",
-				StartIndex: int64(row + len(items) - 1),
-				EndIndex:   int64(row + cnt - 1),
-			}},
-		})
-	}
-
-	// Fill in the row data for each item.
-	for _, i := range items {
-		ucr := &sheets.UpdateCellsRequest{
-			Fields: "userEnteredValue",
-			Start:  &sheets.GridCoordinate{SheetId: sheetnum, RowIndex: int64(row), ColumnIndex: 0},
-			Rows:   []*sheets.RowData{&sheets.RowData{Values: nil}}}
-
-		// Column A:  Order Number
-		addValue(ucr, onum)
-
-		// Column B: OrderTimestamp
-		addValue(ucr, time.Unix(o.Created, 0))
-
-		// Column C: Processor
-		if pt := o.Metadata["payment-type"]; pt != "" {
-			addValue(ucr, "Stripe "+pt)
-		} else {
-			addValue(ucr, "Stripe")
-		}
-
-		// Column D: ProcessorOrderNumber
-		addValue(ucr, o.ID)
-
-		// Columns EFGHIJ: PatronName, PatronEmail, PatronAddress, PatronCity, PatronState, PatronZip
-		if o.Shipping != nil {
-			addValue(ucr, o.Shipping.Name)
-			addValue(ucr, o.Email)
-			addValue(ucr, o.Shipping.Address.Line1)
-			addValue(ucr, o.Shipping.Address.City)
-			addValue(ucr, o.Shipping.Address.State)
-			addValue(ucr, o.Shipping.Address.PostalCode)
-		} else {
-			var cn string
-
-			if cn, err = getCustomerName(o.Customer.ID); err != nil {
-				return err
-			}
-			addValue(ucr, cn)
-			addValue(ucr, o.Email)
-			addValue(ucr, nil)
-			addValue(ucr, nil)
-			addValue(ucr, nil)
-			addValue(ucr, nil)
-		}
-
-		// Columns KL: Product, SKU
-		if sku, err = getSKU(i.Parent); err != nil {
-			return err
-		}
-		addValue(ucr, sku.Product.ID)
-		addValue(ucr, sku.ID)
-
-		// Columns MNO: Quantity, Price, Total
-		if sku.ID == "donation" {
-			addValue(ucr, nil)
-			addValue(ucr, nil)
-		} else {
-			addValue(ucr, i.Quantity)
-			addValue(ucr, sku.Price/100)
-		}
-		addValue(ucr, i.Amount/100)
-
-		requests = append(requests, &sheets.Request{UpdateCells: ucr})
-		row++
-	}
-
-	// Run the batch update for this order.
-	_, err = svc.Spreadsheets.BatchUpdate(sheet, &sheets.BatchUpdateSpreadsheetRequest{Requests: requests}).Do()
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// addValue is a helper that adds a cell value to an UpdateCellsRequest.
-func addValue(ucr *sheets.UpdateCellsRequest, v interface{}) {
-	var ev sheets.ExtendedValue
-	switch v := v.(type) {
-	case nil:
-		break
-	case int:
-		ev.NumberValue = float64(v)
-	case int64:
-		ev.NumberValue = float64(v)
-	case string:
-		ev.StringValue = v
-	case time.Time:
-		ev.StringValue = v.In(time.Local).Format("2006-01-02 15:04:05")
-	default:
-		panic(v)
-	}
-	ucr.Rows[0].Values = append(ucr.Rows[0].Values, &sheets.CellData{UserEnteredValue: &ev})
 }
 
 // skus is a cache of SKU data retrieved from Stripe.
