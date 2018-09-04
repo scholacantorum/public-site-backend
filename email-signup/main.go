@@ -5,6 +5,10 @@
 package main
 
 import (
+	"bytes"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/cgi"
@@ -55,16 +59,109 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		names = append(names, "")
 	}
 
-	// Emit the page.
-	w.Header().Set("Content-Type", "text/html")
-	fmt.Fprintf(w, `<html><body>
-<form id="subform" action="https://scholacantorum.us2.list-manage.com/subscribe/post?u=4eefbbf83086ccdfdac86e1c3&amp;id=5df4425cfb" method="post" novalidate>
-<input type="hidden" name="FNAME" value="%s">
-<input type="hidden" name="LNAME" value="%s">
-<input type="hidden" name="EMAIL" value="%s">
-<input type="hidden" name="EMAILTYPE" value="html">
-<input type="hidden" name="b_4eefbbf83086ccdfdac86e1c3_5df4425cfb">
-</form>
-<script>document.getElementById('subform').submit()</script></body></html>
-`, names[0], names[1], o.Email)
+	// Find out from MailChimp whether the user is already subscribed.
+	var hash = md5.New()
+	hash.Write([]byte(strings.ToLower(o.Email)))
+	var emailkey = hex.EncodeToString(hash.Sum(nil))
+	var mcbase = fmt.Sprintf("https://%s.api.mailchimp.com/3.0/lists/%s/members/",
+		private.MailChimpAPIKey[len(private.MailChimpAPIKey)-3:], private.MailChimpListID)
+	var req *http.Request
+	if req, err = http.NewRequest(http.MethodGet, mcbase+emailkey, nil); err != nil {
+		belog.Log("MailChimp NewRequest: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	req.SetBasicAuth("x", private.MailChimpAPIKey)
+	var resp *http.Response
+	if resp, err = http.DefaultClient.Do(req); err != nil {
+		belog.Log("MailChimp get: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	var status string
+	if resp.StatusCode == http.StatusOK {
+		var block struct {
+			Status string
+		}
+		if err = json.NewDecoder(resp.Body).Decode(&block); err == nil && block.Status != "" {
+			status = block.Status
+		}
+	}
+	resp.Body.Close()
+
+	// If they're already on the list, there's nothing to do.  Return an
+	// appropriate status code.
+	if status == "subscribed" {
+		belog.Log("%s already subscribed", o.Email)
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	// If they previously requested a subscription but haven't confirmed,
+	// there's nothing we can do.  Return an appropriate status code.
+	if status == "pending" {
+		belog.Log("%s already pending", o.Email)
+		w.WriteHeader(http.StatusAccepted)
+		return
+	}
+
+	// If their status is something else, we want to change it to "pending".
+	if status != "" {
+		req, err = http.NewRequest(http.MethodPatch, mcbase+emailkey, bytes.NewReader([]byte(`{"status":"pending"}`)))
+		if err != nil {
+			belog.Log("MailChimp NewRequest: %s", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		req.SetBasicAuth("x", private.MailChimpAPIKey)
+		req.Header.Set("Content-Type", "application/json")
+		if resp, err = http.DefaultClient.Do(req); err != nil {
+			belog.Log("MailChimp patch: %s", err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			belog.Log("MailChimp patch: %s", resp.Status)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		belog.Log("%s changed from %s to pending", o.Email, status)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// It's a new subscription.
+	var body = map[string]interface{}{
+		"email_address": o.Email,
+		"status":        "pending",
+		"email_type":    "html",
+		"merge_fields": map[string]string{
+			"FNAME": names[0],
+			"LNAME": names[1],
+		},
+	}
+	var bodyenc []byte
+	bodyenc, _ = json.Marshal(&body)
+	req, err = http.NewRequest(http.MethodPost, mcbase, bytes.NewReader(bodyenc))
+	if err != nil {
+		belog.Log("MailChimp NewRequest: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	req.SetBasicAuth("x", private.MailChimpAPIKey)
+	req.Header.Set("Content-Type", "application/json")
+	if resp, err = http.DefaultClient.Do(req); err != nil {
+		belog.Log("MailChimp post: %s", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		belog.Log("MailChimp post: %s", resp.Status)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	belog.Log("%s added in pending status", o.Email)
+	w.WriteHeader(http.StatusOK)
 }
