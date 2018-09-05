@@ -25,6 +25,12 @@ import (
 
 func main() {
 	belog.LogApp = "email-signup"
+	defer func() {
+		if err := recover(); err != nil {
+			belog.Log("PANIC: %s", err)
+			panic(err)
+		}
+	}()
 	http.Handle("/backend/email-signup", http.HandlerFunc(handler))
 	cgi.Serve(nil)
 }

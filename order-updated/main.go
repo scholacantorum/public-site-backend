@@ -33,6 +33,12 @@ var sheet string
 
 func main() {
 	belog.LogApp = "order-updated"
+	defer func() {
+		if err := recover(); err != nil {
+			belog.Log("PANIC: %s", err)
+			panic(err)
+		}
+	}()
 	http.Handle("/backend/order-updated", http.HandlerFunc(handler))
 	cgi.Serve(nil)
 }

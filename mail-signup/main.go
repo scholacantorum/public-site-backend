@@ -23,6 +23,12 @@ var toaddrs []string
 
 func main() {
 	belog.LogApp = "mail-signup"
+	defer func() {
+		if err := recover(); err != nil {
+			belog.Log("PANIC: %s", err)
+			panic(err)
+		}
+	}()
 	http.Handle("/backend/mail-signup", http.HandlerFunc(handler))
 	cgi.Serve(nil)
 	threads.Wait()

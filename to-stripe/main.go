@@ -59,6 +59,12 @@ var order orderinfo
 
 func main() {
 	belog.LogApp = "to-stripe"
+	defer func() {
+		if err := recover(); err != nil {
+			belog.Log("PANIC: %s", err)
+			panic(err)
+		}
+	}()
 	http.Handle("/backend/to-stripe", http.HandlerFunc(handler))
 	cgi.Serve(nil)
 }

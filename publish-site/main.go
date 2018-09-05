@@ -18,6 +18,12 @@ import (
 func main() {
 	belog.LogApp = "publish-site"
 	belog.LogMode = "LIVE"
+	defer func() {
+		if err := recover(); err != nil {
+			belog.Log("PANIC: %s", err)
+			panic(err)
+		}
+	}()
 	http.Handle("/backend/publish-site", http.HandlerFunc(handler))
 	cgi.Serve(nil)
 }

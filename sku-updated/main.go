@@ -22,6 +22,12 @@ import (
 
 func main() {
 	belog.LogApp = "sku-updated"
+	defer func() {
+		if err := recover(); err != nil {
+			belog.Log("PANIC: %s", err)
+			panic(err)
+		}
+	}()
 	http.Handle("/backend/sku-updated", http.HandlerFunc(handler))
 	cgi.Serve(nil)
 }
