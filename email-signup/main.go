@@ -1,7 +1,9 @@
-// email-signup is a CGI script that takes a single parameter, order, which
-// is a Stripe order ID.  It emits HTML that posts the necessary form to
-// MailChimp.  (It would be better to do this through their API, but I don't
-// have access yet.)
+// email-signup is a CGI script that signs people up for our email list.  It can
+// take email, fname, lname parameters specifying the user's email address and
+// name.  Or it can take a single parameter, order, which is a Stripe order ID,
+// in which case it will use the email address and name from that order.  In
+// either case it talks to MailChimp's API and ensures that the email address is
+// either "subscribed" or "pending"; otherwise it puts it into "pending".
 package main
 
 import (
@@ -44,28 +46,43 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Step 1.  Gather data.
+	var email, fname, lname string
 	oid := strings.TrimSpace(r.FormValue("order"))
-	op := stripe.OrderParams{}
-	op.AddExpand("customer")
-	var o *stripe.Order
-	var err error
-	if o, err = order.Get(oid, &op); err != nil {
-		belog.Log("get order %s: %s", oid, err)
-		w.WriteHeader(http.StatusInternalServerError)
-		return
+	if oid != "" {
+		op := stripe.OrderParams{}
+		op.AddExpand("customer")
+		var o *stripe.Order
+		var err error
+		if o, err = order.Get(oid, &op); err != nil {
+			belog.Log("get order %s: %s", oid, err)
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		email = o.Email
+		var names = strings.SplitN(o.Customer.Description, " ", 2)
+		fname = names[0]
+		if len(names) > 1 {
+			lname = names[1]
+		}
+	} else {
+		email = strings.TrimSpace(r.FormValue("email"))
+		fname = strings.TrimSpace(r.FormValue("fname"))
+		lname = strings.TrimSpace(r.FormValue("lname"))
 	}
-	var names = strings.SplitN(o.Customer.Description, " ", 2)
-	if len(names) < 2 {
-		names = append(names, "")
+	if email == "" || fname == "" {
+		belog.Log("missing email or name")
+		w.WriteHeader(http.StatusBadRequest)
+		return
 	}
 
 	// Find out from MailChimp whether the user is already subscribed.
 	var hash = md5.New()
-	hash.Write([]byte(strings.ToLower(o.Email)))
+	hash.Write([]byte(strings.ToLower(email)))
 	var emailkey = hex.EncodeToString(hash.Sum(nil))
 	var mcbase = fmt.Sprintf("https://%s.api.mailchimp.com/3.0/lists/%s/members/",
 		private.MailChimpAPIKey[len(private.MailChimpAPIKey)-3:], private.MailChimpListID)
 	var req *http.Request
+	var err error
 	if req, err = http.NewRequest(http.MethodGet, mcbase+emailkey, nil); err != nil {
 		belog.Log("MailChimp NewRequest: %s", err)
 		w.WriteHeader(http.StatusInternalServerError)
@@ -92,7 +109,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	// If they're already on the list, there's nothing to do.  Return an
 	// appropriate status code.
 	if status == "subscribed" {
-		belog.Log("%s already subscribed", o.Email)
+		belog.Log("%s already subscribed", email)
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
@@ -100,7 +117,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	// If they previously requested a subscription but haven't confirmed,
 	// there's nothing we can do.  Return an appropriate status code.
 	if status == "pending" {
-		belog.Log("%s already pending", o.Email)
+		belog.Log("%s already pending", email)
 		w.WriteHeader(http.StatusAccepted)
 		return
 	}
@@ -126,19 +143,19 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
-		belog.Log("%s changed from %s to pending", o.Email, status)
+		belog.Log("%s changed from %s to pending", email, status)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 
 	// It's a new subscription.
 	var body = map[string]interface{}{
-		"email_address": o.Email,
+		"email_address": email,
 		"status":        "pending",
 		"email_type":    "html",
 		"merge_fields": map[string]string{
-			"FNAME": names[0],
-			"LNAME": names[1],
+			"FNAME": fname,
+			"LNAME": lname,
 		},
 	}
 	var bodyenc []byte
@@ -162,6 +179,6 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
-	belog.Log("%s added in pending status", o.Email)
+	belog.Log("%s added in pending status", email)
 	w.WriteHeader(http.StatusOK)
 }
