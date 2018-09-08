@@ -1,20 +1,19 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/cgi"
-	"net/smtp"
 	"os"
+	"os/exec"
 	"strings"
 	"sync"
 
-	"github.com/stripe/stripe-go"
-	"github.com/stripe/stripe-go/order"
-
 	"github.com/scholacantorum/public-site-backend/backend-log"
 	"github.com/scholacantorum/public-site-backend/private"
+	"github.com/stripe/stripe-go"
+	"github.com/stripe/stripe-go/order"
 )
 
 var threads sync.WaitGroup
@@ -96,31 +95,32 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Step 3.  Send email to office (in background).
-	threads.Add(1)
-	go func() {
-		var message bytes.Buffer
-		fmt.Fprint(&message, "From: Schola Cantorum Web Site <admin@scholacantorum.org>\r\n")
-		fmt.Fprintf(&message, "To: %s\r\n", toaddr)
-		fmt.Fprint(&message, "Subject: Mailing List Request\r\n\r\n")
-		fmt.Fprintf(&message, `
-On the Schola Cantorum web site, we have received a request to add
+	var cmd *exec.Cmd
+	var pipe io.WriteCloser
+	var err error
+	cmd = exec.Command("/home/scholacantorum/bin/send-email", toaddrs...)
+	if pipe, err = cmd.StdinPipe(); err != nil {
+		belog.Log("can't pipe to send-email: %s", err)
+		return
+	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err = cmd.Start(); err != nil {
+		belog.Log("can't start send-email: %s", err)
+		return
+	}
+	fmt.Fprintf(pipe, `From: Schola Cantorum Web Site <admin@scholacantorum.org>
+To: %s
+Subject: Mailing List Request
 
+<p>On the Schola Cantorum web site, we have received a request to add</p>
+<pre>%s
 %s
-%s
-%s, %s %s
-
-to our postal mail list.
-
-Regards,
-The Web Site
-`, name, address, city, state, zip)
-		if err := smtp.SendMail(private.SMTPServer,
-			smtp.PlainAuth("", private.SMTPUsername, private.SMTPPassword, private.SMTPHost),
-			"admin@scholacantorum.org", toaddrs, message.Bytes()); err != nil {
-			fmt.Fprintf(os.Stderr, "ERROR: can't send email for mailing list request: %s\n", err)
-		}
-		threads.Done()
-	}()
+%s, %s  %s</pre>
+<p>to our postal mail list.</p>
+<p>Regards,<br>The Web Site</p>
+`, toaddr, name, address, city, state, zip)
+	pipe.Close()
 
 	// Step 4.  Report success.
 	w.WriteHeader(http.StatusOK)
