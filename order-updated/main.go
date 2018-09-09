@@ -280,7 +280,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			Rows: []*sheets.RowData{{Values: []*sheets.CellData{{
 				UserEnteredValue: &sheets.ExtendedValue{NumberValue: float64(onum)},
 			}, {
-				UserEnteredValue: &sheets.ExtendedValue{StringValue: time.Unix(order.Created, 0).In(time.Local).Format("2016-01-02 15:04:05")},
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: time.Unix(order.Created, 0).In(time.Local).Format("2006-01-02 15:04:05")},
 			}, {
 				UserEnteredValue: &sheets.ExtendedValue{StringValue: processor},
 			}, {
