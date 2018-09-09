@@ -17,6 +17,10 @@ import (
 	"github.com/magefile/mage/target"
 )
 
+func init() {
+	os.Chdir(os.Getenv("HOME"))
+}
+
 // Pull retrieves the latest bits from all 3 GitHub repos.
 func Pull() {
 	mg.Deps(PullBackend, PullFramework, PullContent)

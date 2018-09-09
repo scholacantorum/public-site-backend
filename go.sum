@@ -1,5 +1,7 @@
 cloud.google.com/go v0.27.0 h1:Xa8ZWro6QYKOwDKtxfKsiE0ea2jD39nx32RxtF5RjYE=
 cloud.google.com/go v0.27.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
+github.com/magefile/mage v1.2.4 h1:Olsqw6CIOK4dYqrCAZ2tEiwdg4jx0g1wltVvuOuFhPE=
+github.com/magefile/mage v1.2.4/go.mod h1:IUDi13rsHje59lecXokTfGX0QIzO45uVPlXnJYsXepA=
 github.com/stripe/stripe-go v46.0.0+incompatible h1:FeS6R4IM5UKP8AinLCsw4on0PDlIKekx3/0vNjskiII=
 github.com/stripe/stripe-go v46.0.0+incompatible/go.mod h1:A1dQZmO/QypXmsL0T8axYZkSN/uA/T/A64pfKdBAMiY=
 golang.org/x/crypto v0.0.0-20180904163835-0709b304e793 h1:u+LnwYTOOW7Ukr/fppxEb1Nwz0AtPflrblfvUudpo+I=
