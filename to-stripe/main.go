@@ -38,6 +38,7 @@ type orderinfo struct {
 	Product     string `json:",omitempty"`
 	Quantity    int    `json:",omitempty"`
 	Donation    int    `json:",omitempty"`
+	Count       int    `json:",omitempty"`
 	Coupon      string `json:",omitempty"`
 	Total       int64  `json:",omitempty"`
 	PayType     string `json:",omitempty"`
@@ -46,6 +47,7 @@ type orderinfo struct {
 	OrderID     string `json:",omitempty"`
 	ChargeID    string `json:",omitempty"`
 	Error       string `json:",omitempty"`
+	customer    *stripe.Customer
 	sku         *stripe.SKU
 }
 
@@ -266,8 +268,15 @@ func findOrCreateCustomer(w http.ResponseWriter) bool {
 	var clistp *stripe.CustomerListParams
 	var iter *customer.Iter
 	var cust *stripe.Customer
+	var params stripe.Params
 	var err error
 
+	if order.Count != 0 { // monthly donation
+		params.Metadata = map[string]string{
+			"monthly-donation-amount": strconv.Itoa(order.Donation),
+			"monthly-donation-count":  strconv.Itoa(order.Count),
+		}
+	}
 	clistp = new(stripe.CustomerListParams)
 	clistp.Filters.AddFilter("email", "", order.Email)
 	iter = customer.List(clistp)
@@ -275,11 +284,22 @@ func findOrCreateCustomer(w http.ResponseWriter) bool {
 		c := iter.Customer()
 		if c.Description == order.Name && c.Email == order.Email {
 			cust = c
+			if order.Count != 0 {
+				if _, ok := c.Metadata["monthly-donation-count"]; ok {
+					sendError(w, "You have already signed up for a monthly donation.  If you want to change it, please contact the Schola Cantorum office.")
+					return false
+				}
+				if c, err = customer.Update(c.ID, &stripe.CustomerParams{Params: params}); err != nil {
+					belog.Log("stripe update customer with monthly donation %d: %s", order.OrderNumber, err)
+					sendError(w, "")
+					return false
+				}
+			}
 			break
 		}
 	}
 	if cust == nil {
-		cust, err = customer.New(&stripe.CustomerParams{Description: &order.Name, Email: &order.Email})
+		cust, err = customer.New(&stripe.CustomerParams{Description: &order.Name, Email: &order.Email, Params: params})
 		if err != nil {
 			belog.Log("stripe create customer for order %d: %s", order.OrderNumber, err)
 			sendError(w, "")
@@ -287,6 +307,7 @@ func findOrCreateCustomer(w http.ResponseWriter) bool {
 		}
 	}
 	order.CustomerID = cust.ID
+	order.customer = cust
 	return true
 }
 
@@ -338,6 +359,9 @@ func createOrder(w http.ResponseWriter) bool {
 			Quantity:    stripe.Int64(int64(order.Donation)),
 			Type:        stripe.String(string(stripe.OrderItemTypeSKU)),
 		})
+	}
+	if order.Count != 0 {
+		params.Params.Metadata["recurrence"] = "monthly"
 	}
 	if o, err = sorder.New(params); err != nil {
 		belog.Log("stripe create order %d: %s", order.OrderNumber, err)
