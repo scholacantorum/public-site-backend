@@ -22,7 +22,7 @@ import (
 var orderNumberFile string
 var confirmfile string
 var emailTo []string
-var verbose = true
+var verbose = false
 
 func main() {
 	belog.LogApp = "monthly-orders"
