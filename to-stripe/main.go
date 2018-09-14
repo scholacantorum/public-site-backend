@@ -47,7 +47,6 @@ type orderinfo struct {
 	OrderID     string `json:",omitempty"`
 	ChargeID    string `json:",omitempty"`
 	Error       string `json:",omitempty"`
-	customer    *stripe.Customer
 	sku         *stripe.SKU
 }
 
@@ -290,7 +289,18 @@ func findOrCreateCustomer(w http.ResponseWriter) bool {
 					sendError(w, "You have already signed up for a monthly donation.  If you want to change it, please contact the Schola Cantorum office.")
 					return false
 				}
-				if c, err = customer.Update(c.ID, &stripe.CustomerParams{Params: params}); err != nil {
+
+				// Add the monthly donation metadata to the
+				// customer as well as the payment source.
+				var cparams = stripe.CustomerParams{Params: params}
+				cparams.SetSource(order.PaySource)
+				if c, err = customer.Update(c.ID, &cparams); err != nil {
+					if serr, ok := err.(*stripe.Error); ok {
+						if serr.Type == stripe.ErrorTypeCard {
+							sendError(w, serr.Msg)
+							return false
+						}
+					}
 					belog.Log("stripe update customer with monthly donation %d: %s", order.OrderNumber, err)
 					sendError(w, "")
 					return false
@@ -300,7 +310,18 @@ func findOrCreateCustomer(w http.ResponseWriter) bool {
 		}
 	}
 	if cust == nil {
-		cust, err = customer.New(&stripe.CustomerParams{Description: &order.Name, Email: &order.Email, Params: params})
+		var cparams = stripe.CustomerParams{Description: &order.Name, Email: &order.Email, Params: params}
+		if order.Count != 0 {
+			// Include the payment source in the customer definition.
+			cparams.SetSource(order.PaySource)
+		}
+		cust, err = customer.New(&cparams)
+		if serr, ok := err.(*stripe.Error); ok {
+			if serr.Type == stripe.ErrorTypeCard {
+				sendError(w, serr.Msg)
+				return false
+			}
+		}
 		if err != nil {
 			belog.Log("stripe create customer for order %d: %s", order.OrderNumber, err)
 			sendError(w, "")
@@ -308,7 +329,6 @@ func findOrCreateCustomer(w http.ResponseWriter) bool {
 		}
 	}
 	order.CustomerID = cust.ID
-	order.customer = cust
 	return true
 }
 
@@ -379,7 +399,11 @@ func payOrder(w http.ResponseWriter) bool {
 	var err error
 
 	params = new(stripe.OrderPayParams)
-	params.SetSource(order.PaySource)
+	if order.Count != 0 { // monthly donation, pay from customer-saved card
+		params.Customer = &order.CustomerID
+	} else { // one-off, pay from card in order data
+		params.SetSource(order.PaySource)
+	}
 	o, err = sorder.Pay(order.OrderID, params)
 	if serr, ok := err.(*stripe.Error); ok {
 		if serr.Type == stripe.ErrorTypeCard {
