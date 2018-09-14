@@ -275,6 +275,7 @@ func findOrCreateCustomer(w http.ResponseWriter) bool {
 		params.Metadata = map[string]string{
 			"monthly-donation-amount": strconv.Itoa(order.Donation),
 			"monthly-donation-count":  strconv.Itoa(order.Count),
+			"monthly-donation-start":  order.Timestamp.Format(time.RFC3339),
 		}
 	}
 	clistp = new(stripe.CustomerListParams)
