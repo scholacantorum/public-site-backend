@@ -56,8 +56,7 @@ func EmailSignup() error {
 	} else if !changed {
 		return nil
 	}
-	return sh.Run("go", "build", "-o", "schola6p/static/backend/email-signup",
-		"github.com/scholacantorum/public-site-backend/email-signup")
+	return sh.Run("go", "build", "-o", "schola6p/static/backend/email-signup", "./schola6p/backend/email-signup")
 }
 
 // MailSignup builds and installs the mail-signup program.
@@ -70,8 +69,7 @@ func MailSignup() error {
 	} else if !changed {
 		return nil
 	}
-	return sh.Run("go", "build", "-o", "schola6p/static/backend/mail-signup",
-		"github.com/scholacantorum/public-site-backend/mail-signup")
+	return sh.Run("go", "build", "-o", "schola6p/static/backend/mail-signup", "./schola6p/backend/mail-signup")
 }
 
 // OrderUpdated builds and installs the order-updated program.
@@ -84,8 +82,7 @@ func OrderUpdated() error {
 	} else if !changed {
 		return nil
 	}
-	return sh.Run("go", "build", "-o", "schola6p/static/backend/order-updated",
-		"github.com/scholacantorum/public-site-backend/order-updated")
+	return sh.Run("go", "build", "-o", "schola6p/static/backend/order-updated", "./schola6p/backend/order-updated")
 }
 
 // PublishSite builds and installs the publish-site program.
@@ -98,8 +95,7 @@ func PublishSite() error {
 	} else if !changed {
 		return nil
 	}
-	return sh.Run("go", "build", "-o", "schola6p/static-sandbox/backend/publish-site",
-		"github.com/scholacantorum/public-site-backend/publish-site")
+	return sh.Run("go", "build", "-o", "schola6p/static-sandbox/backend/publish-site", "./schola6p/backend/publish-site")
 }
 
 // SendEmail builds and installs the send-email program.
@@ -111,7 +107,7 @@ func SendEmail() error {
 	} else if !changed {
 		return nil
 	}
-	return sh.Run("go", "build", "-o", "bin/send-email", "github.com/scholacantorum/public-site-backend/send-email")
+	return sh.Run("go", "build", "-o", "bin/send-email", "./schola6p/backend/send-email")
 }
 
 // SkuUpdated builds and installs the sku-updated program.
@@ -124,8 +120,7 @@ func SkuUpdated() error {
 	} else if !changed {
 		return nil
 	}
-	return sh.Run("go", "build", "-o", "schola6p/static/backend/sku-updated",
-		"github.com/scholacantorum/public-site-backend/sku-updated")
+	return sh.Run("go", "build", "-o", "schola6p/static/backend/sku-updated", "./schola6p/backend/sku-updated")
 }
 
 // ToStripe builds and installs the to-stripe program.
@@ -138,8 +133,7 @@ func ToStripe() error {
 	} else if !changed {
 		return nil
 	}
-	return sh.Run("go", "build", "-o", "schola6p/static/backend/to-stripe",
-		"github.com/scholacantorum/public-site-backend/to-stripe")
+	return sh.Run("go", "build", "-o", "schola6p/static/backend/to-stripe", "./schola6p/backend/to-stripe")
 }
 
 func Sandbox() (err error) {
