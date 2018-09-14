@@ -43,7 +43,7 @@ func PullContent() error {
 
 // Backend builds all of the back-end binaries.
 func Backend() {
-	mg.Deps(EmailSignup, MailSignup, OrderUpdated, PublishSite, SendEmail, SkuUpdated, ToStripe)
+	mg.Deps(EmailSignup, MailSignup, MonthlyOrders, OrderUpdated, PublishSite, SendEmail, SkuUpdated, ToStripe)
 }
 
 // EmailSignup builds and installs the email-signup program.
@@ -70,6 +70,18 @@ func MailSignup() error {
 		return nil
 	}
 	return sh.Run("go", "build", "-o", "schola6p/static/backend/mail-signup", "./schola6p/backend/mail-signup")
+}
+
+// MonthlyOrders builds and installs the monthly-orders program.
+func MonthlyOrders() error {
+	if changed, err := target.Dir(
+		"bin/monthly-orders", "schola6p/backend/monthly-orders", "schola6p/backend/private", "schola6p/backend/backend-log",
+	); err != nil {
+		return err
+	} else if !changed {
+		return nil
+	}
+	return sh.Run("go", "build", "-o", "bin/monthly-orders", "./schola6p/backend/monthly-orders")
 }
 
 // OrderUpdated builds and installs the order-updated program.

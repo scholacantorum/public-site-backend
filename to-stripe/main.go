@@ -311,6 +311,17 @@ func findOrCreateCustomer(w http.ResponseWriter) bool {
 		// monthly donation).  Create a customer.
 
 		var cparams = stripe.CustomerParams{Description: &order.Name, Email: &order.Email}
+		if order.Address != "" {
+			cparams.Shipping = &stripe.CustomerShippingDetailsParams{
+				Name: &order.Name,
+				Address: &stripe.AddressParams{
+					Line1:      &order.Address,
+					City:       &order.City,
+					State:      &order.State,
+					PostalCode: &order.Zip,
+				},
+			}
+		}
 		cparams.SetSource(order.PaySource)
 		if order.Count != 0 { // monthly donation
 			cparams.Params.Metadata = map[string]string{
