@@ -264,56 +264,60 @@ func getSKU(id string) (s *stripe.SKU, err error) {
 }
 
 func findOrCreateCustomer(w http.ResponseWriter) bool {
-	var clistp *stripe.CustomerListParams
-	var iter *customer.Iter
 	var cust *stripe.Customer
-	var params stripe.Params
 	var err error
 
-	if order.Count != 0 { // monthly donation
-		params.Metadata = map[string]string{
-			"monthly-donation-amount": strconv.Itoa(order.Donation),
-			"monthly-donation-count":  strconv.Itoa(order.Count),
-			"monthly-donation-start":  order.Timestamp.Format(time.RFC3339),
-		}
-	}
-	clistp = new(stripe.CustomerListParams)
-	clistp.Filters.AddFilter("email", "", order.Email)
-	iter = customer.List(clistp)
-	for iter.Next() {
-		c := iter.Customer()
-		if c.Description == order.Name && c.Email == order.Email {
-			cust = c
-			if order.Count != 0 {
-				if _, ok := c.Metadata["monthly-donation-count"]; ok {
-					sendError(w, "You have already signed up for a monthly donation.  If you want to change it, please contact the Schola Cantorum office.")
-					return false
-				}
+	if order.Count == 0 {
+		// This is a one-off order, not a monthly donation.  Look for
+		// an existing customer entry we can use.  (We don't reuse
+		// customer entries for monthly donations, so that each one can
+		// have its own preserved payment source, and so that it's
+		// easier to find the donation orders corresponding to a
+		// particular donation sequence.)
 
-				// Add the monthly donation metadata to the
-				// customer as well as the payment source.
-				var cparams = stripe.CustomerParams{Params: params}
-				cparams.SetSource(order.PaySource)
-				if c, err = customer.Update(c.ID, &cparams); err != nil {
-					if serr, ok := err.(*stripe.Error); ok {
-						if serr.Type == stripe.ErrorTypeCard {
-							sendError(w, serr.Msg)
-							return false
-						}
+		var clistp *stripe.CustomerListParams
+		var iter *customer.Iter
+
+		clistp = new(stripe.CustomerListParams)
+		clistp.Filters.AddFilter("email", "", order.Email)
+		iter = customer.List(clistp)
+		for iter.Next() {
+			c := iter.Customer()
+			if c.Description != order.Name || c.Email != order.Email {
+				continue
+			}
+			cust = c
+
+			// Update the customer with the metadata and payment
+			// source for the new order.
+			var cparams = new(stripe.CustomerParams)
+			cparams.SetSource(order.PaySource)
+			if c, err = customer.Update(c.ID, cparams); err != nil {
+				if serr, ok := err.(*stripe.Error); ok {
+					if serr.Type == stripe.ErrorTypeCard {
+						sendError(w, serr.Msg)
+						return false
 					}
-					belog.Log("stripe update customer with monthly donation %d: %s", order.OrderNumber, err)
-					sendError(w, "")
-					return false
 				}
+				belog.Log("stripe update customer for order %d: %s", order.OrderNumber, err)
+				sendError(w, "")
+				return false
 			}
 			break
 		}
 	}
-	if cust == nil {
-		var cparams = stripe.CustomerParams{Description: &order.Name, Email: &order.Email, Params: params}
-		if order.Count != 0 {
-			// Include the payment source in the customer definition.
-			cparams.SetSource(order.PaySource)
+
+	if cust == nil { // Didn't find an existing customer (or it's a new
+		// monthly donation).  Create a customer.
+
+		var cparams = stripe.CustomerParams{Description: &order.Name, Email: &order.Email}
+		cparams.SetSource(order.PaySource)
+		if order.Count != 0 { // monthly donation
+			cparams.Params.Metadata = map[string]string{
+				"monthly-donation-amount": strconv.Itoa(order.Donation),
+				"monthly-donation-count":  strconv.Itoa(order.Count),
+				"monthly-donation-start":  order.Timestamp.Format(time.RFC3339),
+			}
 		}
 		cust, err = customer.New(&cparams)
 		if serr, ok := err.(*stripe.Error); ok {
@@ -328,6 +332,7 @@ func findOrCreateCustomer(w http.ResponseWriter) bool {
 			return false
 		}
 	}
+
 	order.CustomerID = cust.ID
 	return true
 }
@@ -381,9 +386,6 @@ func createOrder(w http.ResponseWriter) bool {
 			Type:        stripe.String(string(stripe.OrderItemTypeSKU)),
 		})
 	}
-	if order.Count != 0 {
-		params.Params.Metadata["recurrence"] = "monthly"
-	}
 	if o, err = sorder.New(params); err != nil {
 		belog.Log("stripe create order %d: %s", order.OrderNumber, err)
 		sendError(w, "")
@@ -394,17 +396,10 @@ func createOrder(w http.ResponseWriter) bool {
 }
 
 func payOrder(w http.ResponseWriter) bool {
-	var params *stripe.OrderPayParams
 	var o *stripe.Order
 	var err error
 
-	params = new(stripe.OrderPayParams)
-	if order.Count != 0 { // monthly donation, pay from customer-saved card
-		params.Customer = &order.CustomerID
-	} else { // one-off, pay from card in order data
-		params.SetSource(order.PaySource)
-	}
-	o, err = sorder.Pay(order.OrderID, params)
+	o, err = sorder.Pay(order.OrderID, &stripe.OrderPayParams{Customer: &order.CustomerID})
 	if serr, ok := err.(*stripe.Error); ok {
 		if serr.Type == stripe.ErrorTypeCard {
 			sendError(w, serr.Msg)
