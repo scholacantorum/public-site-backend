@@ -106,9 +106,11 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if onum, err = strconv.Atoi(order.Metadata["order-number"]); err != nil {
-		err = fmt.Errorf("can't get order-number from order: %s", err)
-		goto ERROR
+	if onums := order.Metadata["order-number"]; onums != "" {
+		if onum, err = strconv.Atoi(onums); err != nil {
+			err = fmt.Errorf("can't get order-number from order: %s", err)
+			goto ERROR
+		}
 	}
 
 	// Establish a connection to Google Sheets, as admin@scholacantorum.org.
