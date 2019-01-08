@@ -16,6 +16,7 @@ import (
 	"net/http/cgi"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/scholacantorum/public-site-backend/backend-log"
 	"github.com/scholacantorum/public-site-backend/private"
@@ -163,6 +164,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			"FNAME": fname,
 			"LNAME": lname,
 		},
+		"timestamp_signup": time.Now().Format(time.RFC3339),
 	}
 	var bodyenc []byte
 	bodyenc, _ = json.Marshal(&body)
