@@ -164,7 +164,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			"FNAME": fname,
 			"LNAME": lname,
 		},
-		"timestamp_signup": time.Now().Format(time.RFC3339),
+		"timestamp_signup": time.Now().In(time.UTC).Format("2006-01-02 15:04:05"),
+		// The docs say the timestamp is supposed to be ISO8601, but the API actually rejects that.
 	}
 	var bodyenc []byte
 	bodyenc, _ = json.Marshal(&body)
