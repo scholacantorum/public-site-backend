@@ -56,7 +56,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	var vr *sheets.BatchGetValuesResponse
 	var requests []*sheets.Request
 	var items = map[string]*stripe.OrderItem{}
-	var onum int
+	var onum string
 	var err error
 
 	// Determine parameters for mode.
@@ -106,12 +106,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
-	if onums := order.Metadata["order-number"]; onums != "" {
-		if onum, err = strconv.Atoi(onums); err != nil {
-			err = fmt.Errorf("can't get order-number from order: %s", err)
-			goto ERROR
-		}
-	}
+	onum = order.Metadata["order-number"]
 
 	// Establish a connection to Google Sheets, as admin@scholacantorum.org.
 	conf = &jwt.Config{
@@ -254,6 +249,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	for _, item := range items {
 		var skudata *stripe.SKU
 		var processor string
+		var onumv sheets.ExtendedValue
 		var qty sheets.ExtendedValue
 		var price sheets.ExtendedValue
 
@@ -275,12 +271,17 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			qty.NumberValue = float64(item.Quantity)
 			price.NumberValue = float64(skudata.Price / 100)
 		}
+		if onumi, err := strconv.Atoi(onum); err == nil {
+			onumv.NumberValue = float64(onumi)
+		} else {
+			onumv.StringValue = onum
+		}
 
 		requests = append(requests, &sheets.Request{AppendCells: &sheets.AppendCellsRequest{
 			SheetId: sheetnum,
 			Fields:  "userEnteredValue",
 			Rows: []*sheets.RowData{{Values: []*sheets.CellData{{
-				UserEnteredValue: &sheets.ExtendedValue{NumberValue: float64(onum)},
+				UserEnteredValue: &onumv,
 			}, {
 				UserEnteredValue: &sheets.ExtendedValue{StringValue: time.Unix(order.Created, 0).In(time.Local).Format("2006-01-02 15:04:05")},
 			}, {
