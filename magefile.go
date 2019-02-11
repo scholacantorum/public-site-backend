@@ -43,7 +43,20 @@ func PullContent() error {
 
 // Backend builds all of the back-end binaries.
 func Backend() {
-	mg.Deps(EmailSignup, MailSignup, MonthlyOrders, OrderUpdated, PublishSite, SendEmail, SkuUpdated, ToStripe)
+	mg.Deps(AllocateOrderNumber, EmailSignup, MailSignup, MonthlyOrders, OrderUpdated, PublishSite, SendEmail, SkuUpdated, ToStripe)
+}
+
+// AllocateOrderNumber builds and installs the allocate-order-number program.
+func AllocateOrderNumber() error {
+	if changed, err := target.Dir(
+		"schola6p/static/backend/allocate-order-number",
+		"schola6p/backend/allocate-order-number", "schola6p/backend/private", "schola6p/backend/backend-log",
+	); err != nil {
+		return err
+	} else if !changed {
+		return nil
+	}
+	return sh.Run("go", "build", "-o", "schola6p/static/backend/allocate-order-number", "./schola6p/backend/allocate-order-number")
 }
 
 // EmailSignup builds and installs the email-signup program.
