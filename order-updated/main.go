@@ -144,28 +144,30 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build the list of SKU lines for this order, net of returns.
-	for _, i := range order.Items {
-		if i.Type == "sku" {
-			li := items[i.Parent]
-			if li == nil {
-				items[i.Parent] = i
-			} else {
-				li.Amount += i.Amount
-				li.Quantity += i.Quantity
-			}
-		}
-	}
-	for _, r := range order.Returns.Data {
-		for _, i := range r.Items {
+	if order.Status == "paid" || order.Status == "fulfilled" {
+		for _, i := range order.Items {
 			if i.Type == "sku" {
 				li := items[i.Parent]
-				if li == nil { // shouldn't be possible
+				if li == nil {
 					items[i.Parent] = i
-					i.Amount *= -1
-					i.Quantity *= -1
 				} else {
-					li.Amount -= i.Amount
-					li.Quantity -= i.Quantity
+					li.Amount += i.Amount
+					li.Quantity += i.Quantity
+				}
+			}
+		}
+		for _, r := range order.Returns.Data {
+			for _, i := range r.Items {
+				if i.Type == "sku" {
+					li := items[i.Parent]
+					if li == nil { // shouldn't be possible
+						items[i.Parent] = i
+						i.Amount *= -1
+						i.Quantity *= -1
+					} else {
+						li.Amount -= i.Amount
+						li.Quantity -= i.Quantity
+					}
 				}
 			}
 		}
