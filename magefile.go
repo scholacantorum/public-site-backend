@@ -43,7 +43,7 @@ func PullContent() error {
 
 // Backend builds all of the back-end binaries.
 func Backend() {
-	mg.Deps(AllocateOrderNumber, EmailSignup, MailSignup, MonthlyOrders, OrderUpdated, PublishSite, SendEmail, SkuUpdated, ToStripe)
+	mg.Deps(AllocateOrderNumber, EmailSignup, MailSignup, OrderUpdated, PublishSite, SendEmail, SendRawEmail, ToStripe)
 }
 
 // AllocateOrderNumber builds and installs the allocate-order-number program.
@@ -85,18 +85,6 @@ func MailSignup() error {
 	return sh.Run("go", "build", "-o", "schola6p/static/backend/mail-signup", "./schola6p/backend/mail-signup")
 }
 
-// MonthlyOrders builds and installs the monthly-orders program.
-func MonthlyOrders() error {
-	if changed, err := target.Dir(
-		"bin/monthly-orders", "schola6p/backend/monthly-orders", "schola6p/backend/private", "schola6p/backend/backend-log",
-	); err != nil {
-		return err
-	} else if !changed {
-		return nil
-	}
-	return sh.Run("go", "build", "-o", "bin/monthly-orders", "./schola6p/backend/monthly-orders")
-}
-
 // OrderUpdated builds and installs the order-updated program.
 func OrderUpdated() error {
 	if changed, err := target.Dir(
@@ -135,17 +123,16 @@ func SendEmail() error {
 	return sh.Run("go", "build", "-o", "bin/send-email", "./schola6p/backend/send-email")
 }
 
-// SkuUpdated builds and installs the sku-updated program.
-func SkuUpdated() error {
+// SendEmail builds and installs the send-email program.
+func SendEmail() error {
 	if changed, err := target.Dir(
-		"schola6p/static/backend/sku-updated",
-		"schola6p/backend/sku-updated", "schola6p/backend/private", "schola6p/backend/backend-log",
+		"bin/send-raw-email", "schola6p/backend/send-raw-email", "schola6p/backend/private", "schola6p/backend/backend-log",
 	); err != nil {
 		return err
 	} else if !changed {
 		return nil
 	}
-	return sh.Run("go", "build", "-o", "schola6p/static/backend/sku-updated", "./schola6p/backend/sku-updated")
+	return sh.Run("go", "build", "-o", "bin/send-raw-email", "./schola6p/backend/send-raw-email")
 }
 
 // ToStripe builds and installs the to-stripe program.
