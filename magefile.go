@@ -123,8 +123,8 @@ func SendEmail() error {
 	return sh.Run("go", "build", "-o", "bin/send-email", "./schola6p/backend/send-email")
 }
 
-// SendEmail builds and installs the send-email program.
-func SendEmail() error {
+// SendRawEmail builds and installs the send-email program.
+func SendRawEmail() error {
 	if changed, err := target.Dir(
 		"bin/send-raw-email", "schola6p/backend/send-raw-email", "schola6p/backend/private", "schola6p/backend/backend-log",
 	); err != nil {
