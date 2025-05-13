@@ -1,167 +1,103 @@
-// This file informs the "mage" command how to build the site.  To use this, run
+// This file informs the "mage" command how to build and publish the
+// back end code.
 //
-// $ mage pull           to pull the latest files from Github
-// $ mage sandbox        to build the sandbox site
-// $ mage production     to build the production site
+// $ mage [build]   builds the code
+// $ mage install   builds the code and install on server
 //
+//go:build mage
 // +build mage
 
 package main
 
 import (
-	"os"
-	"path/filepath"
-
 	"github.com/magefile/mage/mg"
 	"github.com/magefile/mage/sh"
 	"github.com/magefile/mage/target"
 )
 
-func init() {
-	os.Chdir(os.Getenv("HOME"))
-}
+var linux = map[string]string{"GOOS": "linux"}
 
-// Pull retrieves the latest bits from all 3 GitHub repos.
-func Pull() {
-	mg.Deps(PullBackend, PullFramework, PullContent)
-}
-
-// PullBackend retrieves the latest bits from the public-site-backend repo.
-func PullBackend() error {
-	return sh.Run("git", "-C", "schola6p/backend", "pull")
-}
-
-// PullFramework retrieves the latest bits from the public-site-framework repo.
-func PullFramework() error {
-	return sh.Run("git", "-C", "schola6p", "pull")
-}
-
-// PullContent retrieves the latest bits from the public-site repo.
-func PullContent() error {
-	return sh.Run("git", "-C", "schola6p/content", "pull")
-}
+var Default = Build
 
 // Backend builds all of the back-end binaries.
-func Backend() {
-	mg.Deps(AllocateOrderNumber, EmailSignup, MailSignup, OrderUpdated, PublishSite, SendEmail, SendRawEmail, ToStripe)
+func Build() {
+	mg.Deps(AllocateOrderNumber, EmailSignup, MailSignup, OrderUpdated, PublishSite, ToStripe)
 }
 
 // AllocateOrderNumber builds and installs the allocate-order-number program.
 func AllocateOrderNumber() error {
-	if changed, err := target.Dir(
-		"schola6p/static/backend/allocate-order-number",
-		"schola6p/backend/allocate-order-number", "schola6p/backend/private", "schola6p/backend/backend-log",
-	); err != nil {
+	if changed, err := target.Dir("dist/allocate-order-number", "allocate-order-number", "private", "backend-log"); err != nil {
 		return err
 	} else if !changed {
 		return nil
 	}
-	return sh.Run("go", "build", "-o", "schola6p/static/backend/allocate-order-number", "./schola6p/backend/allocate-order-number")
+	return sh.RunWith(linux, "go", "build", "-o", "dist/allocate-order-number", "./allocate-order-number")
 }
 
 // EmailSignup builds and installs the email-signup program.
 func EmailSignup() error {
-	if changed, err := target.Dir(
-		"schola6p/static/backend/email-signup",
-		"schola6p/backend/email-signup", "schola6p/backend/private", "schola6p/backend/backend-log",
-	); err != nil {
+	if changed, err := target.Dir("dist/email-signup", "email-signup", "private", "backend-log"); err != nil {
 		return err
 	} else if !changed {
 		return nil
 	}
-	return sh.Run("go", "build", "-o", "schola6p/static/backend/email-signup", "./schola6p/backend/email-signup")
+	return sh.RunWith(linux, "go", "build", "-o", "dist/email-signup", "./email-signup")
 }
 
 // MailSignup builds and installs the mail-signup program.
 func MailSignup() error {
-	if changed, err := target.Dir(
-		"schola6p/static/backend/mail-signup",
-		"schola6p/backend/mail-signup", "schola6p/backend/private", "schola6p/backend/backend-log",
-	); err != nil {
+	if changed, err := target.Dir("dist/mail-signup", "mail-signup", "private", "backend-log"); err != nil {
 		return err
 	} else if !changed {
 		return nil
 	}
-	return sh.Run("go", "build", "-o", "schola6p/static/backend/mail-signup", "./schola6p/backend/mail-signup")
+	return sh.RunWith(linux, "go", "build", "-o", "dist/mail-signup", "./mail-signup")
 }
 
 // OrderUpdated builds and installs the order-updated program.
 func OrderUpdated() error {
-	if changed, err := target.Dir(
-		"schola6p/static/backend/order-updated",
-		"schola6p/backend/order-updated", "schola6p/backend/private", "schola6p/backend/backend-log",
-	); err != nil {
+	if changed, err := target.Dir("dist/order-updated", "order-updated", "private", "backend-log"); err != nil {
 		return err
 	} else if !changed {
 		return nil
 	}
-	return sh.Run("go", "build", "-o", "schola6p/static/backend/order-updated", "./schola6p/backend/order-updated")
+	return sh.RunWith(linux, "go", "build", "-o", "dist/order-updated", "./order-updated")
 }
 
 // PublishSite builds and installs the publish-site program.
 func PublishSite() error {
-	if changed, err := target.Dir(
-		"schola6p/static-sandbox/backend/publish-site",
-		"schola6p/backend/publish-site", "schola6p/backend/private", "schola6p/backend/backend-log",
-	); err != nil {
+	if changed, err := target.Dir("dist/publish-site", "publish-site", "private", "backend-log"); err != nil {
 		return err
 	} else if !changed {
 		return nil
 	}
-	return sh.Run("go", "build", "-o", "schola6p/static-sandbox/backend/publish-site", "./schola6p/backend/publish-site")
-}
-
-// SendEmail builds and installs the send-email program.
-func SendEmail() error {
-	if changed, err := target.Dir(
-		"bin/send-email", "schola6p/backend/send-email", "schola6p/backend/private", "schola6p/backend/backend-log",
-	); err != nil {
-		return err
-	} else if !changed {
-		return nil
-	}
-	return sh.Run("go", "build", "-o", "bin/send-email", "./schola6p/backend/send-email")
-}
-
-// SendRawEmail builds and installs the send-email program.
-func SendRawEmail() error {
-	if changed, err := target.Dir(
-		"bin/send-raw-email", "schola6p/backend/send-raw-email", "schola6p/backend/private", "schola6p/backend/backend-log",
-	); err != nil {
-		return err
-	} else if !changed {
-		return nil
-	}
-	return sh.Run("go", "build", "-o", "bin/send-raw-email", "./schola6p/backend/send-raw-email")
+	return sh.RunWith(linux, "go", "build", "-o", "dist/publish-site", "./publish-site")
 }
 
 // ToStripe builds and installs the to-stripe program.
 func ToStripe() error {
-	if changed, err := target.Dir(
-		"schola6p/static/backend/to-stripe",
-		"schola6p/backend/to-stripe", "schola6p/backend/private", "schola6p/backend/backend-log",
-	); err != nil {
+	if changed, err := target.Dir("dist/to-stripe", "to-stripe", "private", "backend-log"); err != nil {
 		return err
 	} else if !changed {
 		return nil
 	}
-	return sh.Run("go", "build", "-o", "schola6p/static/backend/to-stripe", "./schola6p/backend/to-stripe")
+	return sh.RunWith(linux, "go", "build", "-o", "dist/to-stripe", "./to-stripe")
 }
 
-func Sandbox() (err error) {
-	mg.Deps(Backend)
-	if err = os.Chdir("schola6p"); err != nil {
+func Install() (err error) {
+	mg.Deps(Build)
+	if err = sh.Run("scp", "dist/allocate-order-number", "dist/email-signup", "dist/mail-signup", "dist/order-updated", "dist/to-stripe", "schola:schola6p/static/backend"); err != nil {
 		return err
 	}
-	defer os.Chdir(os.Getenv("HOME"))
-	return sh.Run(filepath.Join(os.Getenv("HOME"), "bin/hugo"), "--config", "sandbox.yaml", "--cleanDestinationDir")
+	if err = sh.Run("scp", "dist/publish-site", "schola:schola6p/static-sandbox/backend"); err != nil {
+		return err
+	}
+	if err = sh.Run("ssh", "schola", "bin/hugo --config sandbox.yaml --cleanDestinationDir"); err != nil {
+		return err
+	}
+	return nil
 }
 
-func Production() (err error) {
-	mg.Deps(Sandbox)
-	if err = os.Chdir("schola6p"); err != nil {
-		return err
-	}
-	defer os.Chdir(os.Getenv("HOME"))
-	return sh.Run(filepath.Join(os.Getenv("HOME"), "bin/hugo"), "--config", "production.yaml", "--cleanDestinationDir")
+func Publish() (err error) {
+	return sh.Run("ssh", "schola", "cd schola6p && bin/hugo --config production.yaml --cleanDestinationDir")
 }

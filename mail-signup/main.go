@@ -10,15 +10,17 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/scholacantorum/public-site-backend/backend-log"
+	belog "github.com/scholacantorum/public-site-backend/backend-log"
 	"github.com/scholacantorum/public-site-backend/private"
 	"github.com/stripe/stripe-go"
 	"github.com/stripe/stripe-go/order"
 )
 
-var threads sync.WaitGroup
-var toaddr string
-var toaddrs []string
+var (
+	threads sync.WaitGroup
+	toaddr  string
+	toaddrs []string
+)
 
 func main() {
 	belog.LogApp = "mail-signup"
@@ -111,6 +113,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	}
 	fmt.Fprintf(pipe, `From: Schola Cantorum Web Site <admin@scholacantorum.org>
 To: %s
+Bcc: admin@scholacantorum.org
 Subject: Mailing List Request
 
 <p>On the Schola Cantorum web site, we have received a request to add</p>

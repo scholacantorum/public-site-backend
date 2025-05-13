@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/scholacantorum/public-site-backend/backend-log"
+	belog "github.com/scholacantorum/public-site-backend/backend-log"
 	"github.com/scholacantorum/public-site-backend/private"
 	"github.com/stripe/stripe-go"
 	"github.com/stripe/stripe-go/customer"
@@ -50,13 +50,17 @@ type orderinfo struct {
 	sku         *stripe.SKU
 }
 
-var stateRE = regexp.MustCompile(`(?i)^[a-z][a-z]$`)
-var zipRE = regexp.MustCompile(`^[0-9]{5}(?:-[0-9]{4})?$`)
+var (
+	stateRE = regexp.MustCompile(`(?i)^[a-z][a-z]$`)
+	zipRE   = regexp.MustCompile(`^[0-9]{5}(?:-[0-9]{4})?$`)
+)
 
-var orderNumberFile string
-var orderLogFile string
-var emailTo []string
-var order orderinfo
+var (
+	orderNumberFile string
+	orderLogFile    string
+	emailTo         []string
+	order           orderinfo
+)
 
 func main() {
 	belog.LogApp = "to-stripe"
@@ -290,7 +294,7 @@ func findOrCreateCustomer(w http.ResponseWriter) bool {
 
 			// Update the customer with the metadata and payment
 			// source for the new order.
-			var cparams = new(stripe.CustomerParams)
+			cparams := new(stripe.CustomerParams)
 			cparams.SetSource(order.PaySource)
 			if c, err = customer.Update(c.ID, cparams); err != nil {
 				if serr, ok := err.(*stripe.Error); ok {
@@ -310,7 +314,7 @@ func findOrCreateCustomer(w http.ResponseWriter) bool {
 	if cust == nil { // Didn't find an existing customer (or it's a new
 		// monthly donation).  Create a customer.
 
-		var cparams = stripe.CustomerParams{Description: &order.Name, Email: &order.Email}
+		cparams := stripe.CustomerParams{Description: &order.Name, Email: &order.Email}
 		if order.Address != "" {
 			cparams.Shipping = &stripe.CustomerShippingDetailsParams{
 				Name: &order.Name,
@@ -476,6 +480,7 @@ func sendEmail() {
 	}
 	fmt.Fprintf(pipe, `From: Schola Cantorum Web Site <admin@scholacantorum.org>
 To: %s <%s>
+Bcc: admin@scholacantorum.org
 Reply-To: info@scholacantorum.org
 Subject: Schola Cantorum %s #%d
 

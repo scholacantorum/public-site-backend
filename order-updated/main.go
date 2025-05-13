@@ -15,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/scholacantorum/public-site-backend/backend-log"
+	belog "github.com/scholacantorum/public-site-backend/backend-log"
 	"github.com/scholacantorum/public-site-backend/private"
 	"github.com/stripe/stripe-go"
 	"github.com/stripe/stripe-go/customer"
@@ -28,8 +28,10 @@ import (
 	"google.golang.org/api/sheets/v4"
 )
 
-var webhookSecret string
-var sheet string
+var (
+	webhookSecret string
+	sheet         string
+)
 
 func main() {
 	belog.LogApp = "order-updated"
@@ -55,7 +57,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 	var sheetnum int64
 	var vr *sheets.BatchGetValuesResponse
 	var requests []*sheets.Request
-	var items = map[string]*stripe.OrderItem{}
+	items := map[string]*stripe.OrderItem{}
 	var onum string
 	var err error
 
@@ -218,6 +220,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		// We found a row for this SKU.  Update the quantity and total
 		// on it.  We'll leave the unit price unchanged.
 		if sku != "donation" {
+			number := float64(item.Quantity)
 			requests = append(requests, &sheets.Request{UpdateCells: &sheets.UpdateCellsRequest{
 				Start: &sheets.GridCoordinate{
 					SheetId:     sheetnum,
@@ -227,11 +230,12 @@ func handler(w http.ResponseWriter, r *http.Request) {
 				Fields: "userEnteredValue",
 				Rows: []*sheets.RowData{{Values: []*sheets.CellData{{
 					UserEnteredValue: &sheets.ExtendedValue{
-						NumberValue: float64(item.Quantity),
+						NumberValue: &number,
 					},
 				}}}},
 			}})
 		}
+		number := float64(item.Amount / 100)
 		requests = append(requests, &sheets.Request{UpdateCells: &sheets.UpdateCellsRequest{
 			Start: &sheets.GridCoordinate{
 				SheetId:     sheetnum,
@@ -240,7 +244,7 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			},
 			Fields: "userEnteredValue",
 			Rows: []*sheets.RowData{{Values: []*sheets.CellData{{
-				UserEnteredValue: &sheets.ExtendedValue{NumberValue: float64(item.Amount / 100)},
+				UserEnteredValue: &sheets.ExtendedValue{NumberValue: &number},
 			}}}},
 		}})
 		delete(items, sku)
@@ -270,48 +274,53 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			order.Shipping = &stripe.Shipping{Name: cn, Address: &stripe.Address{}}
 		}
 		if item.Parent != "donation" {
-			qty.NumberValue = float64(item.Quantity)
-			price.NumberValue = float64(skudata.Price / 100)
+			qtyn := float64(item.Quantity)
+			qty.NumberValue = &qtyn
+			pricen := float64(skudata.Price / 100)
+			price.NumberValue = &pricen
 		}
 		if onumi, err := strconv.Atoi(onum); err == nil {
-			onumv.NumberValue = float64(onumi)
+			onumn := float64(onumi)
+			onumv.NumberValue = &onumn
 		} else {
-			onumv.StringValue = onum
+			onumv.StringValue = &onum
 		}
 
+		tstr := time.Unix(order.Created, 0).In(time.Local).Format("2006-01-02 15:04:05")
+		amount := float64(item.Amount / 100)
 		requests = append(requests, &sheets.Request{AppendCells: &sheets.AppendCellsRequest{
 			SheetId: sheetnum,
 			Fields:  "userEnteredValue",
 			Rows: []*sheets.RowData{{Values: []*sheets.CellData{{
 				UserEnteredValue: &onumv,
 			}, {
-				UserEnteredValue: &sheets.ExtendedValue{StringValue: time.Unix(order.Created, 0).In(time.Local).Format("2006-01-02 15:04:05")},
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: &tstr},
 			}, {
-				UserEnteredValue: &sheets.ExtendedValue{StringValue: processor},
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: &processor},
 			}, {
-				UserEnteredValue: &sheets.ExtendedValue{StringValue: order.ID},
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: &order.ID},
 			}, {
-				UserEnteredValue: &sheets.ExtendedValue{StringValue: order.Shipping.Name},
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: &order.Shipping.Name},
 			}, {
-				UserEnteredValue: &sheets.ExtendedValue{StringValue: order.Email},
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: &order.Email},
 			}, {
-				UserEnteredValue: &sheets.ExtendedValue{StringValue: order.Shipping.Address.Line1},
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: &order.Shipping.Address.Line1},
 			}, {
-				UserEnteredValue: &sheets.ExtendedValue{StringValue: order.Shipping.Address.City},
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: &order.Shipping.Address.City},
 			}, {
-				UserEnteredValue: &sheets.ExtendedValue{StringValue: order.Shipping.Address.State},
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: &order.Shipping.Address.State},
 			}, {
-				UserEnteredValue: &sheets.ExtendedValue{StringValue: order.Shipping.Address.PostalCode},
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: &order.Shipping.Address.PostalCode},
 			}, {
-				UserEnteredValue: &sheets.ExtendedValue{StringValue: skudata.Product.ID},
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: &skudata.Product.ID},
 			}, {
-				UserEnteredValue: &sheets.ExtendedValue{StringValue: item.Parent},
+				UserEnteredValue: &sheets.ExtendedValue{StringValue: &item.Parent},
 			}, {
 				UserEnteredValue: &qty,
 			}, {
 				UserEnteredValue: &price,
 			}, {
-				UserEnteredValue: &sheets.ExtendedValue{NumberValue: float64(item.Amount / 100)},
+				UserEnteredValue: &sheets.ExtendedValue{NumberValue: &amount},
 			}}}},
 		}})
 	}
