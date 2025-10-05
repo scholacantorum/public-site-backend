@@ -95,6 +95,11 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
+	// Also, if it's not completely filled out, ignore it.
+	if name == "" || address == "" || city == "" || state == "" || zip == "" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
 
 	// Step 3.  Send email to office (in background).
 	var cmd *exec.Cmd
