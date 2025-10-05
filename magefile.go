@@ -92,7 +92,7 @@ func Install() (err error) {
 	if err = sh.Run("scp", "dist/publish-site", "schola:schola6p/static-sandbox/backend"); err != nil {
 		return err
 	}
-	if err = sh.Run("ssh", "schola", "bin/hugo --config sandbox.yaml --cleanDestinationDir"); err != nil {
+	if err = sh.Run("ssh", "schola", "cd schola6p && ../bin/hugo --config sandbox.yaml --cleanDestinationDir"); err != nil {
 		return err
 	}
 	return nil
